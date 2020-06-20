@@ -23,6 +23,8 @@ Color: [Solarized](https://en.wikipedia.org/wiki/Solarized_(color_scheme)#Colors
 1. [Description](#description)
 2. [License](#license)
 3. [Dependencies](#dependencies)
+   - 3.1 [Optional Dependencies](#optional-dependencies)
+   - 3.2 [Required Dependencies](#required-dependencies)
 4. [Download and Installation](#download-and-installation)
    - 4.1 [Branches](#branches)
    - 4.2 [Install on Ubuntu](#install-on-ubuntu)
@@ -69,7 +71,7 @@ The new features mentioned above are only available in the latest alpha branch. 
 
 This repo has a different license from [the original repo](https://github.com/agermanidis/autosub).
 
-[GPLv3](LICENSE)
+[GPLv2](LICENSE)
 
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FBingLingGroup%2Fautosub.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2FBingLingGroup%2Fautosub)
 
@@ -77,17 +79,31 @@ This repo has a different license from [the original repo](https://github.com/ag
 
 Autosub depends on these third party softwares or Python site-packages. Much appreciation to all of these projects.
 
+#### Optional dependencies
+
 - [ffmpeg](https://ffmpeg.org/)
 - [ffprobe](https://ffmpeg.org/ffprobe.html)
-- [auditok](https://github.com/amsehili/auditok)
+- [langcodes](https://github.com/LuminosoInsight/langcodes)
+- [ffmpeg-normalize](https://github.com/slhck/ffmpeg-normalize)
+- [python-Levenshtein](https://github.com/ztane/python-Levenshtein)(Used by [fuzzywuzzy](https://github.com/seatgeek/fuzzywuzzy))
+
+For windows user:
+
+- [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/downloads/)
+  - Used by [marisa-trie](https://github.com/pytries/marisa-trie) when installing.
+  - [marisa-trie](https://github.com/pytries/marisa-trie) is the dependency of the [langcodes](https://github.com/LuminosoInsight/langcodes).
+  - Probable components installation: MSVC v14 VS 2019 C++ build tools, windows 10 SDK.
+
+#### Required dependencies
+
+- [auditok 0.1.5](https://github.com/amsehili/auditok)
 - [pysubs2](https://github.com/tkarabela/pysubs2)
 - [wcwidth](https://github.com/jquast/wcwidth)
 - [requests](https://github.com/psf/requests)
-- [langcodes](https://github.com/LuminosoInsight/langcodes)
+- [fuzzywuzzy](https://github.com/seatgeek/fuzzywuzzy)
 - [progressbar2](https://github.com/WoLpH/python-progressbar)
 - [websocket-client](https://github.com/websocket-client/websocket-client)
 - [py-googletrans](https://github.com/ssut/py-googletrans)
-- [ffmpeg-normalize](https://github.com/slhck/ffmpeg-normalize)
 
 [requirements.txt](requirements.txt).
 
@@ -99,9 +115,17 @@ About how to install these dependencies, see [Download and Installation](#downlo
 
 Except the PyPI version, others include non-original codes not from the original repository.
 
-After autosub-0.4.0, all of the codes is compatible with both Python 2.7 and Python 3. It don't matter if you change the Python version in the installation commands below.
+0.4.0 > autosub
 
-About the dependencies installation. If you install autosub by pip, ffmpeg and ffmpeg-normalize won't be installed together not like the Python site-packages already listed on the `setup.py` or `requirements.txt`. You need to install them separately. But of course they are optional. They aren't necessary if you only use autosub to translate your subtitles.
+- These versions are only compatible with Python 2.7.
+
+0.5.6a >= autosub >= 0.4.0
+
+- These versions are compatible with both Python 2.7 and Python 3. It doesn't matter if you change the Python version in the installation commands below.
+
+autosub >= 0.5.7a
+
+- These versions are only compatible with Python 3.
 
 ffmpeg, ffprobe, ffmpeg-normalize need to be put on one of these places to let the autosub detect and use them. The following codes are in the [constants.py](autosub/constants.py). Priority is determined in order.
 
@@ -143,8 +167,19 @@ Include dependencies installation commands.
 Install from `alpha` branch.(latest autosub alpha release)
 
 ```bash
-apt install ffmpeg python python-pip git -y
-pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize
+apt install ffmpeg python3 curl git -y
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python3 get-pip.py
+pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize langcodes
+```
+
+Install from `dev` branch.(latest autosub dev version)
+
+```bash
+apt install ffmpeg python3 curl git -y
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python3 get-pip.py
+pip install git+https://github.com/BingLingGroup/autosub.git@dev ffmpeg-normalize langcodes
 ```
 
 Install from `origin` branch.(autosub-0.4.0a)
@@ -187,13 +222,24 @@ Choco installation command is for cmd.(not Powershell)
 @"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" && SET "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
 ```
 
+If you don't have [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/downloads/), please install autosub without langcodes.
+
 Install from `alpha` branch.(latest autosub alpha release)
 
 ```batch
-choco install git python2 curl ffmpeg -y
+choco install git python curl ffmpeg -y
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python get-pip.py
-pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize
+pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize langcodes
+```
+
+Install from `dev` branch.(latest autosub dev version)
+
+```batch
+choco install git python curl ffmpeg -y
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python get-pip.py
+pip install git+https://github.com/BingLingGroup/autosub.git@dev ffmpeg-normalize langcodes
 ```
 
 Install from `origin` branch.(autosub-0.4.0a)
@@ -609,6 +655,8 @@ autosub -sapi baidu -i input_file -sconf baidu_speech_config ...(other options)
 
 Translate subtitles to another language.
 
+If not input option `-SRC`, the translation source language will be auto-detected by py-googletrans.
+
 Translate subtitles from an audio/video file.
 
 ```
@@ -618,7 +666,7 @@ autosub -i input_file -S lang_code (-SRC lang_code) -D lang_code
 Translate subtitles from a subtitles file.
 
 ```
-autosub -i input_file -SRC lang_code -D lang_code
+autosub -i input_file (-SRC lang_code) -D lang_code
 ```
 
 Translate subtitles by "translate.google.cn" which can be directly accessed from somewhere.
@@ -679,18 +727,16 @@ Language Options:
                         text/docs/languages(arg_num = 1) (default: None)
   -SRC lang_code, --src-language lang_code
                         Lang code/Lang tag for translation source language. If
-                        not given, use langcodes to get a best matching of the
-                        "-S"/"--speech-language". If using py-googletrans as
-                        the method to translate, WRONG INPUT STOP RUNNING.
-                        (arg_num = 1) (default: None)
+                        not given, use py-googletrans to auto-detect the src
+                        language. (arg_num = 1) (default: auto)
   -D lang_code, --dst-language lang_code
                         Lang code/Lang tag for translation destination
-                        language. Same attention in the "-SRC"/"--src-
-                        language". (arg_num = 1) (default: None)
+                        language. (arg_num = 1) (default: None)
   -bm [mode [mode ...]], --best-match [mode [mode ...]]
-                        Allow langcodes to get a best matching lang code when
+                        Use langcodes to get a best matching lang code when
                         your input is wrong. Only functional for py-
-                        googletrans and Google Speech V2. Available modes: s,
+                        googletrans and Google Speech API. If langcodes not
+                        installed, use fuzzywuzzy instead. Available modes: s,
                         src, d, all. "s" for "-S"/"--speech-language". "src"
                         for "-SRC"/"--src-language". "d" for "-D"/"--dst-
                         language". (3 >= arg_num >= 1)
@@ -790,7 +836,7 @@ py-googletrans Options:
 
   -slp second, --sleep-seconds second
                         (Experimental)Seconds to sleep between two translation
-                        requests. (arg_num = 1) (default: 5)
+                        requests. (arg_num = 1) (default: 1)
   -surl [URL [URL ...]], --service-urls [URL [URL ...]]
                         (Experimental)Customize request urls. Ref: https://py-
                         googletrans.readthedocs.io/en/latest/ (arg_num >= 1)
@@ -801,6 +847,31 @@ py-googletrans Options:
                         Drop any .ass override codes in the text before
                         translation. Only affect the translation result.
                         (arg_num = 0)
+  -gt-dc [chars], --gt-delete-chars [chars]
+                        Replace the specific chars with a space after
+                        translation, and strip the space at the end of each
+                        sentence. Only affect the translation result. (arg_num
+                        = 0 or 1) (const: ，。！)
+
+Subtitles Conversion Options:
+  Options to control subtitles conversions.(Experimental)
+
+  -mjs integer, --max-join-size integer
+                        (Experimental)Max length to join two events. (arg_num
+                        = 1) (default: 100)
+  -mdt second, --max-delta-time second
+                        (Experimental)Max delta time to join two events.
+                        (arg_num = 1) (default: 0.2)
+  -dms string, --delimiters string
+                        (Experimental)Delimiters not to join two events.
+                        (arg_num = 1) (default: !()*,.:;?[]^_`~)
+  -sw1 words_delimited_by_space, --stop-words-1 words_delimited_by_space
+                        (Experimental)First set of Stop words to split two
+                        events. (arg_num = 1)
+  -sw2 words_delimited_by_space, --stop-words-2 words_delimited_by_space
+                        (Experimental)Second set of Stop words to split two
+                        events. (arg_num = 1)
+  -ds, --dont-split     (Experimental)Don't Split just merge. (arg_num = 0)
 
 Network Options:
   Options to control network.
@@ -846,14 +917,15 @@ Audio Processing Options:
                         procedure. "o": only pre-process the input audio.
                         ("-k"/"--keep" is true) "s": only split the input
                         audio. ("-k"/"--keep" is true) Default command to pre-
-                        process the audio:
-                        c:\programdata\chocolatey\bin\ffmpeg.exe -hide_banner
-                        -i "{in_}" -af "asplit[a],aphasemeter=video=0,ametadat
-                        a=select:key=lavfi.aphasemeter.phase:value=-0.005:func
-                        tion=less,pan=1c|c0=c0,aresample=async=1:first_pts=0,[
-                        a]amix" -ac 1 -f flac "{out_}" |
-                        c:\programdata\chocolatey\bin\ffmpeg.exe -hide_banner
-                        -i "{in_}" -af lowpass=3000,highpass=200 "{out_}" |
+                        process the audio: C:\Program
+                        Files\ImageMagick-7.0.10-Q16\ffmpeg.exe -hide_banner
+                        -i "{in_}" -vn -af "asplit[a],aphasemeter=video=0,amet
+                        adata=select:key=lavfi.aphasemeter.phase:value=-0.005:
+                        function=less,pan=1c|c0=c0,aresample=async=1:first_pts
+                        =0,[a]amix" -ac 1 -f flac -loglevel error "{out_}" |
+                        C:\Program Files\ImageMagick-7.0.10-Q16\ffmpeg.exe
+                        -hide_banner -i "{in_}" -af
+                        "lowpass=3000,highpass=200" -loglevel error "{out_}" |
                         C:\Python37\Scripts\ffmpeg-normalize.exe -v "{in_}"
                         -ar 44100 -ofmt flac -c:a flac -pr -p -o "{out_}"
                         (Ref: https://github.com/stevenj/autosub/blob/master/s
@@ -872,16 +944,18 @@ Audio Processing Options:
   -acc command, --audio-conversion-cmd command
                         (Experimental)This arg will override the default audio
                         conversion command. "[", "]" are optional arguments
-                        meaning you can remove them. "{{", "}}" are required
+                        meaning you can remove them. "{", "}" are required
                         arguments meaning you can't remove them. (arg_num = 1)
-                        (default: c:\programdata\chocolatey\bin\ffmpeg.exe
-                        -hide_banner -y -i "{in_}" -vn -ac {channel} -ar
-                        {sample_rate} "{out_}")
+                        (default: C:\Program
+                        Files\ImageMagick-7.0.10-Q16\ffmpeg.exe -hide_banner
+                        -y -i "{in_}" -vn -ac {channel} -ar {sample_rate}
+                        -loglevel error "{out_}")
   -asc command, --audio-split-cmd command
                         (Experimental)This arg will override the default audio
                         split command. Same attention above. (arg_num = 1)
-                        (default: c:\programdata\chocolatey\bin\ffmpeg.exe -y
-                        -ss {start} -i "{in_}" -t {dura} -vn -ac [channel] -ar
+                        (default: C:\Program
+                        Files\ImageMagick-7.0.10-Q16\ffmpeg.exe -y -ss {start}
+                        -i "{in_}" -t {dura} -vn -ac [channel] -ar
                         [sample_rate] -loglevel error "{out_}")
   -asf file_suffix, --api-suffix file_suffix
                         (Experimental)This arg will override the default API
@@ -900,13 +974,13 @@ Auditok Options:
                         The energy level which determines the region to be
                         detected. Ref: https://auditok.readthedocs.io/en/lates
                         t/apitutorial.html#examples-using-real-audio-data
-                        (arg_num = 1) (default: 50)
+                        (arg_num = 1) (default: 45)
   -mnrs second, --min-region-size second
                         Minimum region size. Same docs above. (arg_num = 1)
-                        (default: 0.8)
+                        (default: 0.5)
   -mxrs second, --max-region-size second
                         Maximum region size. Same docs above. (arg_num = 1)
-                        (default: 6.0)
+                        (default: 10.0)
   -mxcs second, --max-continuous-silence second
                         Maximum length of a tolerated silence within a valid
                         audio activity. Same docs above. (arg_num = 1)
@@ -956,6 +1030,7 @@ The default value is used
 when the option is not given at the command line.
 "(arg_num)" means if the option is given,
 the number of the arguments is required.
+Arguments *ARE* the things given behind the options.
 Author: Bing Ling
 Email: binglinggroup@outlook.com
 Bug report: https://github.com/BingLingGroup/autosub

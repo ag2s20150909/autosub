@@ -23,6 +23,8 @@
 1. [介绍](#介绍)
 2. [证书](#证书)
 3. [依赖](#依赖)
+   - 3.1 [可选依赖](#可选依赖)
+   - 3.2 [必需依赖](#必需依赖)
 4. [下载与安装](#下载与安装)
    - 4.1 [分支](#分支)
    - 4.2 [在Ubuntu上安装](#在Ubuntu上安装)
@@ -69,7 +71,7 @@ Autosub是一个字幕自动生成工具。它能使用Auditok来自动检测语
 
 这个仓库和[原仓库](https://github.com/agermanidis/autosub)的证书不一样。
 
-[GPLv3](../LICENSE)
+[GPLv2](../LICENSE)
 
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FBingLingGroup%2Fautosub.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2FBingLingGroup%2Fautosub)
 
@@ -77,16 +79,31 @@ Autosub是一个字幕自动生成工具。它能使用Auditok来自动检测语
 
 Autosub依赖于这些第三方的软件或者Python的site-packages。非常感谢以下这些项目的工作。
 
+#### 可选依赖
+
 - [ffmpeg](https://ffmpeg.org/)
 - [ffprobe](https://ffmpeg.org/ffprobe.html)
-- [auditok](https://github.com/amsehili/auditok)
+- [ffmpeg-normalize](https://github.com/slhck/ffmpeg-normalize)
+- [langcodes](https://github.com/LuminosoInsight/langcodes)
+- [python-Levenshtein](https://github.com/ztane/python-Levenshtein)([fuzzywuzzy](https://github.com/seatgeek/fuzzywuzzy)的可选依赖)
+
+对于windows用户：
+
+- [Visual Studio 2019 生成工具](https://visualstudio.microsoft.com/downloads/)
+  - [marisa-trie](https://github.com/pytries/marisa-trie)安装时会用到。
+  - [marisa-trie](https://github.com/pytries/marisa-trie)是[langcodes](https://github.com/LuminosoInsight/langcodes)的依赖。
+  - 大概需要安装以下两个组件：MSVC v14 VS 2019 C++生成工具, windows 10 SDK。
+
+#### 必需依赖
+
+- [auditok 0.1.5](https://github.com/amsehili/auditok)
 - [pysubs2](https://github.com/tkarabela/pysubs2)
 - [wcwidth](https://github.com/jquast/wcwidth)
-- [langcodes](https://github.com/LuminosoInsight/langcodes)
+- [requests](https://github.com/psf/requests)
+- [fuzzywuzzy](https://github.com/seatgeek/fuzzywuzzy)
 - [progressbar2](https://github.com/WoLpH/python-progressbar)
 - [websocket-client](https://github.com/websocket-client/websocket-client)
 - [py-googletrans](https://github.com/ssut/py-googletrans)
-- [ffmpeg-normalize](https://github.com/slhck/ffmpeg-normalize)
 
 [requirements.txt](requirements.txt)。
 
@@ -98,9 +115,17 @@ Autosub依赖于这些第三方的软件或者Python的site-packages。非常感
 
 除去PyPI版本的代码和原仓库的一致，其他的安装方式均包含非原仓库的代码。
 
-在autosub-0.4.0之后，所有的代码都是Python3和Python2.7兼容的。所以后面的安装指令中的Python版本你可以随便改。
+0.4.0 > autosub
 
-至于依赖的安装，如果你是通过pip来安装的autosub，那么ffmpeg和ffmpeg-normalize不会被一块儿安装，不像site-packages那样列在`setup.py`或者`requirements.txt`里面自动安装了。你需要分别安装它们。当然安装是可选的，如果你只是翻译字幕，不需要安装这两个软件。
+- 这些版本只与Python 2.7兼容。
+
+0.5.6a >= autosub >= 0.4.0
+
+- 这些版本与Python3和Python2.7兼容。所以后面的安装指令中的Python版本你可以随便改。
+
+autosub >= 0.5.7a
+
+- 这些版本只与Python 3兼容。
 
 ffmpeg, ffprobe, ffmpeg-normalize需要被放在以下位置之一来让autosub检测并使用。以下代码都在[constants.py](autosub/constants.py)里。优先级按照先后顺序确定。
 
@@ -137,13 +162,24 @@ pip install .
 
 #### 在Ubuntu上安装
 
-第一行包含依赖的安装。
+包含依赖的安装。
 
 从`alpha`分支安装。（最新alpha发布版）
 
 ```bash
-apt install ffmpeg python python-pip git -y
-pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize
+apt install ffmpeg python3 curl git -y
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python3 get-pip.py
+pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize langcodes
+```
+
+从`dev`分支安装。（最新dev版）
+
+```bash
+apt install ffmpeg python3 curl git -y
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python3 get-pip.py
+pip install git+https://github.com/BingLingGroup/autosub.git@dev ffmpeg-normalize langcodes
 ```
 
 从`origin`分支安装。（autosub-0.4.0a）
@@ -186,13 +222,24 @@ pip install autosub
 @"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" && SET "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
 ```
 
+如果你没有[Visual Studio 2019 生成工具](https://visualstudio.microsoft.com/downloads/)，请不要安装langcodes。
+
 从`alpha`分支安装。（最新alpha发布版）
 
 ```batch
-choco install git python2 curl ffmpeg -y
+choco install git python curl ffmpeg -y
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python get-pip.py
-pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize
+pip install git+https://github.com/BingLingGroup/autosub.git@alpha ffmpeg-normalize langcodes
+```
+
+从`dev`分支安装。（最新dev版）
+
+```batch
+choco install git python curl ffmpeg -y
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python get-pip.py
+pip install git+https://github.com/BingLingGroup/autosub.git@dev ffmpeg-normalize langcodes
 ```
 
 从`origin`分支安装。（autosub-0.4.0a）
@@ -206,7 +253,7 @@ pip install git+https://github.com/BingLingGroup/autosub.git@origin
 
 PyPI的版本（autosub-0.3.12）不推荐在windows上使用，因为它无法成功运行。查看[origin分支的更新日志](CHANGELOG.zh-Hans.md#040-alpha---2019-02-17)来了解详情。
 
-推荐使用`python`而不是`python2`在autosub-0.4.0之后。
+在autosub-0.4.0之后，推荐使用`python`而不是`python2`。
 
 <escape><a href = "#目录">&nbsp;↑&nbsp;</a></escape>
 
@@ -610,6 +657,8 @@ autosub -sapi baidu -i 输入文件 -sconf 百度语音配置文件 ...(其他�
 
 将字幕翻译为别的语言。
 
+如果不输入选项`-SRC`，翻译源语言会被py-googletrans自动检测。
+
 从音频/视频文件翻译字幕。
 
 ```
@@ -619,7 +668,7 @@ autosub -i 输入文件 -S 语言代码 (-SRC 语言代码) -D 语言代码
 从字幕文件翻译字幕。
 
 ```
-autosub -i 输入文件 -SRC 语言代码 -D 语言代码
+autosub -i 输入文件 (-SRC 语言代码) -D 语言代码
 ```
 
 使用"translate.google.cn"翻译字幕，"translate.google.cn"可被某地直连。
@@ -666,17 +715,16 @@ usage:
                         不会终止程序。但是后果自负。参考：https://cloud.google.com/speech-to-
                         text/docs/languages（参数个数为1）（默认参数： None）
   -SRC 语言代码, --src-language 语言代码
-                        用于翻译的源语言的语言代码/语言标识符。如果没有提供，会使用langcodes从列表里获取一个最佳匹配选项"
-                        -S"/"--speech-language"的语言代码。如果使用py-
-                        googletrans作为翻译的方法，错误的输入会终止运行。（参数个数为1）（默认参数为None）
+                        用于翻译的目标语言的语言代码/语言标识符。如果没有提供，使用py-
+                        googletrans来自动检测源语言。（参数个数为1）（默认参数为auto）
   -D 语言代码, --dst-language 语言代码
-                        用于翻译的目标语言的语言代码/语言标识符。同样的注意参考选项"-SRC"/"--src-
-                        language"。（参数个数为1）（默认参数为None）
+                        用于翻译的目标语言的语言代码/语言标识符。（参数个数为1）（默认参数为None）
   -bm [模式 [模式 ...]], --best-match [模式 [模式 ...]]
-                        在输入有误的情况下，允许langcodes为输入获取一个最佳匹配的语言代码。仅在使用py-
-                        googletrans和Google Speech V2时起作用。可选的模式：s, src, d,
-                        all。"s"指"-S"/"--speech-language"。"src"指"-SRC"/"--src-
-                        language"。"d"指"-D"/"--dst-language"。（参数个数在1到3之间）
+                        使用langcodes为输入获取一个最佳匹配的语言代码。仅在使用py-googletrans和Google
+                        Speech V2时起作用。如果langcodes未安装，使用fuzzywuzzy来替代。可选的模式：s,
+                        src, d, all。"s"指"-S"/"--speech-
+                        language"。"src"指"-SRC"/"--src-language"。"d"指"-D"/"--
+                        dst-language"。（参数个数在1到3之间）
   -mns integer, --min-score integer
                         一个介于0和100之间的整数用于控制以下两个选项的匹配结果组，"-lsc"/"--list-speech-
                         codes"以及"-ltc"/"--list-translation-codes"或者在"-bm"/"--
@@ -747,7 +795,7 @@ py-googletrans选项:
   控制翻译的选项。同时也是默认的翻译方法。可能随时会被谷歌爸爸封。
 
   -slp 秒, --sleep-seconds 秒
-                        （实验性）在两次翻译请求之间睡眠（暂停）的时间。（参数个数为1）（默认参数为5）
+                        （实验性）在两次翻译请求之间睡眠（暂停）的时间。（参数个数为1）（默认参数为1）
   -surl [URL [URL ...]], --service-urls [URL [URL ...]]
                         （实验性）自定义多个请求URL。参考：https://py-
                         googletrans.readthedocs.io/en/latest/（参数个数大于等于1）
@@ -755,6 +803,28 @@ py-googletrans选项:
                         （实验性）自定义用户代理（User-Agent）头部。同样的参考文档如上。（参数个数为1）
   -doc, --drop-override-codes
                         在翻译前删除所有文本中的ass特效标签。只影响翻译结果。（参数个数为0）
+  -gt-dc [chars], --gt-delete-chars [chars]
+                        将指定字符替换为空格，并消除每句末尾空格。只会影响翻译结果。（参数个数为0或1）（const为，。！）
+
+字幕转换选项:
+  控制字幕转换的选项。
+
+  -mjs integer, --max-join-size integer
+                        (Experimental)Max length to join two events. (arg_num
+                        = 1) (default: 100)
+  -mdt 秒, --max-delta-time 秒
+                        (Experimental)Max delta time to join two events.
+                        (arg_num = 1) (default: 0.2)
+  -dms string, --delimiters string
+                        (Experimental)Delimiters not to join two events.
+                        (arg_num = 1) (default: !()*,.:;?[]^_`~)
+  -sw1 words_delimited_by_space, --stop-words-1 words_delimited_by_space
+                        (Experimental)First set of Stop words to split two
+                        events. (arg_num = 1)
+  -sw2 words_delimited_by_space, --stop-words-2 words_delimited_by_space
+                        (Experimental)Second set of Stop words to split two
+                        events. (arg_num = 1)
+  -ds, --dont-split     (Experimental)Don't Split just merge. (arg_num = 0)
 
 网络选项:
   控制网络的选项。
@@ -789,14 +859,16 @@ py-googletrans选项:
   -ap [模式 [模式 ...]], --audio-process [模式 [模式 ...]]
                         控制音频处理的选项。如果没有提供选项，进行正常的格式转换工作。"y"：它会先预处理输入文件，如果成功了，在语
                         音转文字之前不会对音频进行额外的处理。"o"：只会预处理输入音频。（"-k"/"--
-                        keep"选项自动置为真）"s"：只会分割输入音频。（"-k"/"--keep"选项自动置为真）以下是用于处
-                        理音频的默认命令：c:\programdata\chocolatey\bin\ffmpeg.exe
-                        -hide_banner -i "{in_}" -af "asplit[a],aphasemeter=vid
-                        eo=0,ametadata=select:key=lavfi.aphasemeter.phase:valu
-                        e=-0.005:function=less,pan=1c|c0=c0,aresample=async=1:
-                        first_pts=0,[a]amix" -ac 1 -f flac "{out_}" |
-                        c:\programdata\chocolatey\bin\ffmpeg.exe -hide_banner
-                        -i "{in_}" -af lowpass=3000,highpass=200 "{out_}" |
+                        keep"选项自动置为真）"s"：只会分割输入音频。（"-k"/"--
+                        keep"选项自动置为真）以下是用于处理音频的默认命令：C:\Program
+                        Files\ImageMagick-7.0.10-Q16\ffmpeg.exe -hide_banner
+                        -i "{in_}" -vn -af "asplit[a],aphasemeter=video=0,amet
+                        adata=select:key=lavfi.aphasemeter.phase:value=-0.005:
+                        function=less,pan=1c|c0=c0,aresample=async=1:first_pts
+                        =0,[a]amix" -ac 1 -f flac -loglevel error "{out_}" |
+                        C:\Program Files\ImageMagick-7.0.10-Q16\ffmpeg.exe
+                        -hide_banner -i "{in_}" -af
+                        "lowpass=3000,highpass=200" -loglevel error "{out_}" |
                         C:\Python37\Scripts\ffmpeg-normalize.exe -v "{in_}"
                         -ar 44100 -ofmt flac -c:a flac -pr -p -o "{out_}"（参考：h
                         ttps://github.com/stevenj/autosub/blob/master/scripts/
@@ -809,15 +881,16 @@ py-googletrans选项:
   -ac integer, --audio-concurrency integer
                         用于ffmpeg音频切割的进程并行数量。（参数个数为1）（默认参数为4）
   -acc 命令, --audio-conversion-cmd 命令
-                        （实验性）这个参数会取代默认的音频转换命令。"[", "]" 是可选参数，可以移除。"{{", "}}"是必
-                        选参数，不可移除。（参数个数为1）（默认参数为c:\programdata\chocolatey\bin\f
-                        fmpeg.exe -hide_banner -y -i "{in_}" -vn -ac {channel}
-                        -ar {sample_rate} "{out_}"）
-  -asc 命令, --audio-split-cmd 命令
-                        （实验性）这个参数会取代默认的音频转换命令。相同的注意如上。（参数个数为1）（默认参数为c:\program
-                        data\chocolatey\bin\ffmpeg.exe -y -ss {start} -i
-                        "{in_}" -t {dura} -vn -ac [channel] -ar [sample_rate]
+                        （实验性）这个参数会取代默认的音频转换命令。"[", "]" 是可选参数，可以移除。"{",
+                        "}"是必选参数，不可移除。（参数个数为1）（默认参数为C:\Program
+                        Files\ImageMagick-7.0.10-Q16\ffmpeg.exe -hide_banner
+                        -y -i "{in_}" -vn -ac {channel} -ar {sample_rate}
                         -loglevel error "{out_}"）
+  -asc 命令, --audio-split-cmd 命令
+                        （实验性）这个参数会取代默认的音频转换命令。相同的注意如上。（参数个数为1）（默认参数为C:\Program
+                        Files\ImageMagick-7.0.10-Q16\ffmpeg.exe -y -ss {start}
+                        -i "{in_}" -t {dura} -vn -ac [channel] -ar
+                        [sample_rate] -loglevel error "{out_}"）
   -asf 文件名后缀, --api-suffix 文件名后缀
                         （实验性）这个参数会取代默认的给API使用的音频文件后缀。（默认参数为.flac）
   -asr 采样率, --api-sample-rate 采样率
@@ -831,11 +904,11 @@ Auditok的选项:
   -et 能量（相对值）, --energy-threshold 能量（相对值）
                         用于检测是否是语音区域的能量水平。参考：https://auditok.readthedocs.io/en/
                         latest/apitutorial.html#examples-using-real-audio-
-                        data（参数个数为1）（默认参数为50）
+                        data（参数个数为1）（默认参数为45）
   -mnrs 秒, --min-region-size 秒
-                        最小语音区域大小。同样的参考文档如上。（参数个数为1）（默认参数为0.8）
+                        最小语音区域大小。同样的参考文档如上。（参数个数为1）（默认参数为0.5）
   -mxrs 秒, --max-region-size 秒
-                        最大音频区域大小。同样的参考文档如上。（参数个数为1）（默认参数为6.0）
+                        最大音频区域大小。同样的参考文档如上。（参数个数为1）（默认参数为10.0）
   -mxcs 秒, --max-continuous-silence 秒
                         在一段有效的音频活动区域中可以容忍的最大（连续）安静区域。同样的参考文档如上。（参数个数为1）（默认参数为0
                         .2）
@@ -874,6 +947,7 @@ Auditok的选项:
 如果选项没有在命令行中提供时会使用的参数。
 "参数个数"指的是如果提供了选项，
 该选项所需要的参数个数。
+*参数指的是那些用在选项后面的东西。*
 作者: Bing Ling
 Email: binglinggroup@outlook.com
 问题反馈: https://github.com/BingLingGroup/autosub

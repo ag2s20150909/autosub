@@ -121,14 +121,13 @@ def main():  # pylint: disable=too-many-branches, too-many-statements, too-many-
                         args.audio_split_cmd.replace(
                             "-vn -ac [channel] -ar [sample_rate] ", "")
                     if not prcs_file:
-                        print(_("Audio pre-processing failed."
-                                "\nUse default method."))
+                        print(_("Audio pre-processing failed. Try default method."))
                     else:
                         args.input = prcs_file
                         print(_("Audio pre-processing complete."))
 
             else:
-                if args.audio_split_cmd == constants.DEFAULT_AUDIO_SPLT:
+                if args.audio_split_cmd == constants.DEFAULT_AUDIO_SPLT_CMD:
                     # if user doesn't modify the audio_split_cmd
                     if args.api_suffix == ".ogg":
                         # regard ogg as ogg_opus
@@ -143,14 +142,14 @@ def main():  # pylint: disable=too-many-branches, too-many-statements, too-many-
                                 "-vn",
                                 "-vn -c:a pcm_s16le -f s16le")
 
-                args.audio_split_cmd = \
-                    args.audio_split_cmd.replace(
-                        "[channel]",
-                        "{channel}".format(channel=args.api_audio_channel))
-                args.audio_split_cmd = \
-                    args.audio_split_cmd.replace(
-                        "[sample_rate]",
-                        "{sample_rate}".format(sample_rate=args.api_sample_rate))
+            args.audio_split_cmd = \
+                args.audio_split_cmd.replace(
+                    "[channel]",
+                    "{channel}".format(channel=args.api_audio_channel))
+            args.audio_split_cmd = \
+                args.audio_split_cmd.replace(
+                    "[sample_rate]",
+                    "{sample_rate}".format(sample_rate=args.api_sample_rate))
 
             cmdline_utils.validate_aovp_args(args)
             fps = cmdline_utils.get_fps(args=args, input_m=input_m)

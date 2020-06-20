@@ -43,6 +43,7 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
                  "when the option is not given at the command line.\n"
                  "\"(arg_num)\" means if the option is given,\n"
                  "the number of the arguments is required.\n"
+                 "Arguments *ARE* the things given behind the options.\n"
                  "Author: {author}\n"
                  "Email: {email}\n"
                  "Bug report: {homepage}\n").format(
@@ -65,11 +66,9 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
         _('Speech Options'),
         _('Options to control speech-to-text. '
           'If Speech Options not given, it will only generate the times.'))
-    pygt_group = parser.add_argument_group(
-        _('py-googletrans Options'),
-        _('Options to control translation. '
-          'Default method to translate. '
-          'Could be blocked at any time.'))
+    trans_group = parser.add_argument_group(
+        _('Translation Options'),
+        _('Options to control translation.'))
     conversion_group = parser.add_argument_group(
         _('Subtitles Conversion Options'),
         _('Options to control subtitles conversions.(Experimental)'))
@@ -149,27 +148,25 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
     lang_group.add_argument(
         '-SRC', '--src-language',
         metavar=_('lang_code'),
+        default='auto',
         help=_("Lang code/Lang tag for translation source language. "
-               "If not given, use langcodes to get a best matching "
-               "of the \"-S\"/\"--speech-language\". "
-               "If using py-googletrans as the method to translate, "
-               "WRONG INPUT STOP RUNNING. "
+               "If not given, use py-googletrans to auto-detect the src language. "
                "(arg_num = 1) (default: %(default)s)"))
 
     lang_group.add_argument(
         '-D', '--dst-language',
         metavar=_('lang_code'),
         help=_("Lang code/Lang tag for translation destination language. "
-               "Same attention in the \"-SRC\"/\"--src-language\". "
                "(arg_num = 1) (default: %(default)s)"))
 
     lang_group.add_argument(
         '-bm', '--best-match',
         metavar=_('mode'),
         nargs="*",
-        help=_("Allow langcodes to get a best matching lang code "
+        help=_("Use langcodes to get a best matching lang code "
                "when your input is wrong. "
-               "Only functional for py-googletrans and Google Speech V2. "
+               "Only functional for py-googletrans and Google Speech API. "
+               "If langcodes not installed, use fuzzywuzzy instead. "
                "Available modes: "
                "s, src, d, all. "
                "\"s\" for \"-S\"/\"--speech-language\". "
@@ -321,38 +318,66 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
         help=_("Number of concurrent Speech-to-Text requests to make. "
                "(arg_num = 1) (default: %(default)s)"))
 
-    pygt_group.add_argument(
+    trans_group.add_argument(
+        '-tapi', '--translation-api',
+        metavar=_('API_code'),
+        default='pygt',
+        choices=["pygt", "man"],
+        help=_("Choose which translation API to use. "
+               "Currently support: "
+               "pygt: py-googletrans (https://py-googletrans.readthedocs.io/en/latest/). "
+               "man: Manually translate the content by write a txt or docx file and then read it. "
+               "(arg_num = 1) (default: %(default)s)"))
+
+    trans_group.add_argument(
+        '-tf', '--translation-format',
+        metavar=_('format'),
+        default='docx',
+        choices=["docx", "txt"],
+        help=_("Choose which output format for manual translation to use. "
+               "Currently support: docx, txt. "
+               "(arg_num = 1) (default: %(default)s)"))
+
+    trans_group.add_argument(
+        '-mts', '--max-trans-size',
+        metavar='integer',
+        type=int,
+        default=constants.DEFAULT_SIZE_PER_TRANS,
+        help=_("(Experimental)Max size per translation request. "
+               "(arg_num = 1) (default: %(default)s)"))
+
+    trans_group.add_argument(
         '-slp', '--sleep-seconds',
         metavar=_('second'),
         type=float,
         default=constants.DEFAULT_SLEEP_SECONDS,
-        help=_("(Experimental)Seconds to sleep "
+        help=_("(Experimental)Seconds for py-googletrans to sleep "
                "between two translation requests. "
                "(arg_num = 1) (default: %(default)s)"))
 
-    pygt_group.add_argument(
+    trans_group.add_argument(
         '-surl', '--service-urls',
         metavar='URL',
         nargs='*',
-        help=_("(Experimental)Customize request urls. "
+        help=_("(Experimental)Customize py-googletrans request urls. "
                "Ref: https://py-googletrans.readthedocs.io/en/latest/ "
                "(arg_num >= 1)"))
 
-    pygt_group.add_argument(
+    trans_group.add_argument(
         '-ua', '--user-agent',
         metavar='User-Agent headers',
-        help=_("(Experimental)Customize User-Agent headers. "
+        help=_("(Experimental)Customize py-googletrans User-Agent headers. "
                "Same docs above. "
                "(arg_num = 1)"))
 
-    pygt_group.add_argument(
+    trans_group.add_argument(
         '-doc', '--drop-override-codes',
         action='store_true',
         help=_("Drop any .ass override codes in the text before translation. "
                "Only affect the translation result. "
                "(arg_num = 0)"))
 
-    pygt_group.add_argument(
+    trans_group.add_argument(
         '-gt-dc', '--gt-delete-chars',
         nargs='?', metavar="chars",
         const="，。！",
@@ -388,13 +413,13 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
         '-sw1', '--stop-words-1',
         metavar=_('words_delimited_by_space'),
         help=_("(Experimental)First set of Stop words to split two events. "
-               "(arg_num = 1) (default: %(default)s)"))
+               "(arg_num = 1)"))
 
     conversion_group.add_argument(
         '-sw2', '--stop-words-2',
         metavar=_('words_delimited_by_space'),
         help=_("(Experimental)Second set of Stop words to split two events. "
-               "(arg_num = 1) (default: %(default)s)"))
+               "(arg_num = 1)"))
 
     conversion_group.add_argument(
         '-ds', '--dont-split',
@@ -481,9 +506,9 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
                "https://github.com/stevenj/autosub/blob/master/scripts/subgen.sh "
                "https://ffmpeg.org/ffmpeg-filters.html) "
                "(2 >= arg_num >= 1)").format(
-                   dft_1=constants.DEFAULT_AUDIO_PRCS[0],
-                   dft_2=constants.DEFAULT_AUDIO_PRCS[1],
-                   dft_3=constants.DEFAULT_AUDIO_PRCS[2]))
+                   dft_1=constants.DEFAULT_AUDIO_PRCS_CMDS[0],
+                   dft_2=constants.DEFAULT_AUDIO_PRCS_CMDS[1],
+                   dft_3=constants.DEFAULT_AUDIO_PRCS_CMDS[2]))
 
     audio_prcs_group.add_argument(
         '-k', '--keep',
@@ -512,19 +537,19 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
     audio_prcs_group.add_argument(
         '-acc', '--audio-conversion-cmd',
         metavar=_('command'),
-        default=constants.DEFAULT_AUDIO_CVT,
+        default=constants.DEFAULT_AUDIO_CVT_CMD,
         help=_("(Experimental)This arg will override the default "
                "audio conversion command. "
                "\"[\", \"]\" are optional arguments "
                "meaning you can remove them. "
-               "\"{{\", \"}}\" are required arguments "
+               "\"{\", \"}\" are required arguments "
                "meaning you can't remove them. "
                "(arg_num = 1) (default: %(default)s)"))
 
     audio_prcs_group.add_argument(
         '-asc', '--audio-split-cmd',
         metavar=_('command'),
-        default=constants.DEFAULT_AUDIO_SPLT,
+        default=constants.DEFAULT_AUDIO_SPLT_CMD,
         help=_("(Experimental)This arg will override the default "
                "audio split command. "
                "Same attention above. "

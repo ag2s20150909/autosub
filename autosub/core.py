@@ -15,8 +15,9 @@ import re
 import progressbar
 import pysubs2
 import auditok
-import googletrans
 import wcwidth
+import docx
+import googletrans
 
 # Any changes to the path and your own modules
 from autosub import api_baidu
@@ -104,8 +105,9 @@ def bulk_audio_conversion(  # pylint: disable=too-many-arguments
     pbar = progressbar.ProgressBar(widgets=widgets, maxval=len(regions)).start()
     try:
         audio_fragments = []
-        for i, flac_region in enumerate(pool.imap(converter, regions)):
-            audio_fragments.append(flac_region)
+        for i, audio_fragment in enumerate(pool.imap(converter, regions)):
+            if audio_fragment:
+                audio_fragments.append(audio_fragment)
             pbar.update(i)
             gc.collect(0)
         pbar.finish()
@@ -383,7 +385,6 @@ def xfyun_to_text(  # pylint: disable=too-many-locals, too-many-arguments,
             api_secret=config["api_secret"],
             api_address=api_address,
             business_args=config["business"],
-            is_keep=is_keep,
             is_full_result=result_list is not None,
             delete_chars=delete_chars)
 
@@ -413,11 +414,19 @@ def xfyun_to_text(  # pylint: disable=too-many-locals, too-many-arguments,
                     result_list.append("")
                 text_list.append("")
                 pbar.update(i)
+
+        if not is_keep:
+            for audio_fragment in audio_fragments:
+                os.remove(audio_fragment)
+
         pbar.finish()
         pool.terminate()
         pool.join()
 
     except (KeyboardInterrupt, AttributeError) as error:
+        if not is_keep:
+            for audio_fragment in audio_fragments:
+                os.remove(audio_fragment)
         pbar.finish()
         pool.terminate()
         pool.join()
@@ -429,6 +438,9 @@ def xfyun_to_text(  # pylint: disable=too-many-locals, too-many-arguments,
         return None
 
     except exceptions.SpeechToTextException as err_msg:
+        if not is_keep:
+            for audio_fragment in audio_fragments:
+                os.remove(audio_fragment)
         pbar.finish()
         pool.terminate()
         pool.join()
@@ -549,12 +561,11 @@ def baidu_to_text(  # pylint: disable=too-many-locals, too-many-arguments,
 
 def list_to_googletrans(  # pylint: disable=too-many-locals, too-many-arguments, too-many-branches, too-many-statements
         text_list,
+        translator,
         src_language=constants.DEFAULT_SRC_LANGUAGE,
         dst_language=constants.DEFAULT_DST_LANGUAGE,
         size_per_trans=constants.DEFAULT_SIZE_PER_TRANS,
         sleep_seconds=constants.DEFAULT_SLEEP_SECONDS,
-        user_agent=None,
-        service_urls=None,
         drop_override_codes=False,
         delete_chars=None):
     """
@@ -563,10 +574,6 @@ def list_to_googletrans(  # pylint: disable=too-many-locals, too-many-arguments,
 
     if not text_list:
         return None
-
-    print(_("\nTranslating text from \"{0}\" to \"{1}\".").format(
-        src_language,
-        dst_language))
 
     size = 0
     i = 0
@@ -619,6 +626,16 @@ def list_to_googletrans(  # pylint: disable=too-many-locals, too-many-arguments,
         valid_index.append(i)
         # valid_index for valid text position end
 
+    if translator != ManualTranslator and src_language == "auto":
+        content_to_trans = '\n'.join(text_list[i:partial_index[0]])
+        result_src = translator.detect(content_to_trans).lang
+    else:
+        result_src = src_language
+
+    print(_("\nTranslating text from \"{0}\" to \"{1}\".").format(
+        result_src,
+        dst_language))
+
     widgets = [_("Translation: "),
                progressbar.Percentage(), ' ',
                progressbar.Bar(), ' ',
@@ -631,9 +648,6 @@ def list_to_googletrans(  # pylint: disable=too-many-locals, too-many-arguments,
         # total position
         j = 0
         # valid_index position
-        translator = googletrans.Translator(
-            user_agent=user_agent,
-            service_urls=service_urls)
 
         for index in partial_index:
             content_to_trans = '\n'.join(text_list[i:index])
@@ -643,6 +657,7 @@ def list_to_googletrans(  # pylint: disable=too-many-locals, too-many-arguments,
                                                dest=dst_language,
                                                src=src_language)
             result_text = translation.text.translate(str.maketrans('’', '\''))
+            result_src = translation.src
             result_list = result_text.split('\n')
             k = 0
             len_result_list = len(result_list)
@@ -691,7 +706,76 @@ def list_to_googletrans(  # pylint: disable=too-many-locals, too-many-arguments,
         print(_("Cancelling translation."))
         return 1
 
-    return translated_text
+    return translated_text, result_src
+
+
+class ManualTranslator:  # pylint: disable=too-few-public-methods
+    """
+    Class for performing translation manually.
+    """
+    def __init__(self,
+                 trans_doc_name,
+                 input_m=input):
+        # pylint: disable=too-many-arguments
+        self.trans_doc_name = trans_doc_name
+        self.input_m = input_m
+
+    def translate(self,
+                  text,
+                  dest=None,
+                  src=None):
+        """
+        Translate text manually.
+        """
+        if self.trans_doc_name.endswith("docx"):
+            trans_doc = docx.Document()
+            trans_doc.add_paragraph(text=text)
+            trans_doc.save(self.trans_doc_name)
+            if self.input_m:
+                self.input_m(_("Wait for the manual translation. "
+                               "Press Enter to continue."))
+            else:
+                print(_("Wait 20 seconds for the manual translation. "))
+                widgets = [_("Manual translation: "),
+                           progressbar.Percentage(), ' ',
+                           progressbar.Bar(), ' ',
+                           progressbar.ETA()]
+                pbar = progressbar.ProgressBar(widgets=widgets, maxval=20).start()
+                for i in range(20):
+                    pbar.update(i)
+                    time.sleep(1)
+                pbar.finish()
+            trans_doc = docx.Document(self.trans_doc_name)
+            para_list = []
+            for para in trans_doc.paragraphs:
+                para_list.append(para.text)
+            trans_doc_str = '\n'.join(para_list)
+        else:
+            trans_doc_name = str_to_file(
+                str_=text,
+                output=self.trans_doc_name,
+                input_m=self.input_m)
+            if self.input_m:
+                self.input_m(_("Wait for the manual translation. "
+                               "Press Enter to continue."))
+            else:
+                print(_("Wait 20 seconds for the manual translation. "))
+                widgets = [_("Manual translation: "),
+                           progressbar.Percentage(), ' ',
+                           progressbar.Bar(), ' ',
+                           progressbar.ETA()]
+                pbar = progressbar.ProgressBar(widgets=widgets, maxval=20).start()
+                for i in range(20):
+                    pbar.update(i)
+                    time.sleep(1)
+                pbar.finish()
+            trans_doc = open(trans_doc_name, encoding='utf-8')
+            trans_doc_str = trans_doc.read()
+            trans_doc.close()
+        os.remove(self.trans_doc_name)
+        return googletrans.client.Translated(
+            src=src, dest=dest, origin="manual",
+            text=trans_doc_str, pronunciation="manual", extra_data="manual")
 
 
 def list_to_sub_str(
@@ -707,8 +791,7 @@ def list_to_sub_str(
         sub_utils.pysubs2_ssa_event_add(
             src_ssafile=None,
             dst_ssafile=pysubs2_obj,
-            text_list=timed_text,
-            style_name=None)
+            text_list=timed_text)
         formatted_subtitles = pysubs2_obj.to_string(
             format_=subtitles_file_format)
 
@@ -725,8 +808,7 @@ def list_to_sub_str(
         sub_utils.pysubs2_ssa_event_add(
             src_ssafile=None,
             dst_ssafile=pysubs2_obj,
-            text_list=timed_text,
-            style_name=None)
+            text_list=timed_text)
         formatted_subtitles = pysubs2_obj.to_string(
             format_='json')
 
@@ -739,8 +821,7 @@ def list_to_sub_str(
         sub_utils.pysubs2_ssa_event_add(
             src_ssafile=None,
             dst_ssafile=pysubs2_obj,
-            text_list=timed_text,
-            style_name=None)
+            text_list=timed_text)
         formatted_subtitles = pysubs2_obj.to_string(
             format_='microdvd',
             fps=fps)
@@ -753,8 +834,7 @@ def list_to_sub_str(
         sub_utils.pysubs2_ssa_event_add(
             src_ssafile=None,
             dst_ssafile=pysubs2_obj,
-            text_list=timed_text,
-            style_name=None)
+            text_list=timed_text)
         formatted_subtitles = pysubs2_obj.to_string(
             format_='mpl2',
             fps=fps)
@@ -769,8 +849,7 @@ def list_to_sub_str(
         sub_utils.pysubs2_ssa_event_add(
             src_ssafile=None,
             dst_ssafile=pysubs2_obj,
-            text_list=timed_text,
-            style_name=None)
+            text_list=timed_text)
         formatted_subtitles = pysubs2_obj.to_string(
             format_=constants.DEFAULT_SUBTITLES_FORMAT)
 
@@ -892,9 +971,9 @@ def str_to_file(
     dest = output
 
     if input_m:
-        while os.path.isfile(dest):
-            print(_("There is already a file with the same name "
-                    "in this location: \"{dest_name}\".").format(dest_name=dest))
+        while os.path.isfile(dest) or not os.path.isdir(os.path.dirname(dest)):
+            print(_("There is already a file with the same path "
+                    "or the path isn't valid: \"{dest_name}\".").format(dest_name=dest))
             dest = input_m(
                 _("Input a new path (including directory and file name) for output file.\n"))
             ext = os.path.splitext(dest)[-1]
@@ -904,5 +983,4 @@ def str_to_file(
 
     with open(dest, 'wb') as output_file:
         output_file.write(str_.encode("utf-8"))
-
     return dest

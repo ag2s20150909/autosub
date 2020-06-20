@@ -7,6 +7,7 @@ Defines autosub's command line functionality.
 # Import built-in modules
 import gettext
 import os
+import sys
 import subprocess
 import tempfile
 import gc
@@ -15,7 +16,6 @@ import json
 # Import third-party modules
 import auditok
 import googletrans
-import langcodes
 import pysubs2
 
 # Any changes to the path and your own modules
@@ -98,7 +98,7 @@ def list_args(args):
             print("{column_1}{column_2}".format(
                 column_1=lang_code_utils.wjust(_("Lang code"), 18),
                 column_2=_("Description")))
-            for code, language in sorted(constants.TRANSLATION_LANGUAGE_CODES.items()):
+            for code, language in sorted(googletrans.constants.LANGUAGES.items()):
                 print("{column_1}{column_2}".format(
                     column_1=lang_code_utils.wjust(code, 18),
                     column_2=language))
@@ -106,7 +106,7 @@ def list_args(args):
             print(_("Match py-googletrans lang codes."))
             lang_code_utils.match_print(
                 dsr_lang=args.list_translation_codes,
-                match_list=list(constants.TRANSLATION_LANGUAGE_CODES.keys()),
+                match_list=list(googletrans.constants.LANGUAGES.keys()),
                 min_score=args.min_score)
         return True
 
@@ -384,10 +384,18 @@ def validate_aovp_args(args):  # pylint: disable=too-many-branches, too-many-ret
                         match_list=list(constants.SPEECH_TO_TEXT_LANGUAGE_CODES.keys()),
                         min_score=args.min_score)
                     if best_result:
-                        print(_("Use langcodes to standardize the result."))
-                        args.speech_language = langcodes.standardize_tag(best_result[0])
                         print(_("Use \"{lang_code}\" instead.").format(
-                            lang_code=args.speech_language))
+                            lang_code=best_result[0]))
+                        args.speech_language = best_result[0]
+                        if constants.langcodes_:
+                            print(_("Use langcodes to standardize the result."))
+                            args.speech_language = constants.langcodes_.standardize_tag(
+                                best_result[0])
+                            print(_("Use \"{lang_code}\" instead.").format(
+                                lang_code=args.speech_language))
+                        else:
+                            print(_("Use the lower case."))
+                            args.speech_language = best_result[0]
                     else:
                         print(_("Match failed. Still using \"{lang_code}\".").format(
                             lang_code=args.speech_language))
@@ -422,18 +430,11 @@ def validate_aovp_args(args):  # pylint: disable=too-many-branches, too-many-ret
                 elif 'src' not in args.best_match:
                     args.best_match.add('src')
 
-            is_src_matched = False
-            is_dst_matched = False
+            args.src_language = args.src_language.lower()
+            args.dst_language = args.dst_language.lower()
 
-            for key in googletrans.constants.LANGUAGES:
-                if args.src_language.lower() == key.lower():
-                    args.src_language = key
-                    is_src_matched = True
-                if args.dst_language.lower() == key.lower():
-                    args.dst_language = key
-                    is_dst_matched = True
-
-            if not is_src_matched:
+            if args.src_language != 'auto' and \
+                    args.src_language not in googletrans.constants.LANGUAGES:
                 if args.best_match and 'src' in args.best_match:
                     print(_("Let translation source lang code "
                             "to match py-googletrans lang codes."))
@@ -455,7 +456,7 @@ def validate_aovp_args(args):  # pylint: disable=too-many-branches, too-many-ret
                           "Or use \"-bm\"/\"--best-match\" to get a best match.").format(
                               src=args.src_language))
 
-            if not is_dst_matched:
+            if args.dst_language not in googletrans.constants.LANGUAGES:
                 if args.best_match and 'd' in args.best_match:
                     print(_("Let translation destination lang code "
                             "to match py-googletrans lang codes."))
@@ -510,82 +511,77 @@ def validate_sp_args(args):  # pylint: disable=too-many-branches,too-many-return
     Check that the commandline arguments passed to autosub are valid
     for subtitles processing.
     """
-    if args.src_language:
-        if args.dst_language is None:
-            raise exceptions.AutosubException(
-                _("Error: Destination language not provided."))
+    if args.translation_api != "pygt":
+        return 1
 
-        is_src_matched = False
-        is_dst_matched = False
-
-        for key in googletrans.constants.LANGUAGES:
-            if args.src_language.lower() == key.lower():
-                args.src_language = key
-                is_src_matched = True
-            if args.dst_language.lower() == key.lower():
-                args.dst_language = key
-                is_dst_matched = True
-
-        if not is_src_matched:
-            if args.best_match and 'src' in args.best_match:
-                print(
-                    _("Warning: Source language \"{src}\" not supported. "
-                      "Run with \"-lsc\"/\"--list-translation-codes\" "
-                      "to see all supported languages.").format(src=args.src_language))
-                best_result = lang_code_utils.match_print(
-                    dsr_lang=args.src_language,
-                    match_list=list(googletrans.constants.LANGUAGES.keys()),
-                    min_score=args.min_score)
-                if best_result:
-                    print(_("Use \"{lang_code}\" instead.").format(lang_code=best_result[0]))
-                    args.src_language = best_result[0]
-                else:
-                    raise exceptions.AutosubException(
-                        _("Match failed. Still using \"{lang_code}\". "
-                          "Program stopped.").format(
-                              lang_code=args.src_language))
-
-            else:
-                raise exceptions.AutosubException(
-                    _("Error: Source language \"{src}\" not supported. "
-                      "Run with \"-lsc\"/\"--list-translation-codes\" "
-                      "to see all supported languages. "
-                      "Or use \"-bm\"/\"--best-match\" to get a best match.").format(
-                          src=args.src_language))
-
-        if not is_dst_matched:
-            if args.best_match and 'd' in args.best_match:
-                print(
-                    _("Warning: Destination language \"{dst}\" not supported. "
-                      "Run with \"-lsc\"/\"--list-translation-codes\" "
-                      "to see all supported languages.").format(dst=args.dst_language))
-                best_result = lang_code_utils.match_print(
-                    dsr_lang=args.dst_language,
-                    match_list=list(googletrans.constants.LANGUAGES.keys()),
-                    min_score=args.min_score)
-                if best_result:
-                    print(_("Use \"{lang_code}\" instead.").format(lang_code=best_result[0]))
-                    args.dst_language = best_result[0]
-                else:
-                    raise exceptions.AutosubException(
-                        _("Match failed. Still using \"{lang_code}\". "
-                          "Program stopped.").format(
-                              lang_code=args.dst_language))
-
-            else:
-                raise exceptions.AutosubException(
-                    _("Error: Destination language \"{dst}\" not supported. "
-                      "Run with \"-lsc\"/\"--list-translation-codes\" "
-                      "to see all supported languages. "
-                      "Or use \"-bm\"/\"--best-match\" to get a best match.").format(
-                          dst=args.dst_language))
-
-        if args.dst_language == args.src_language:
-            raise exceptions.AutosubException(
-                _("Error: Translation source language is the same as the destination language."))
-
-    else:
+    if not args.dst_language or not args.src_language:
         return 0
+
+    if args.dst_language is None:
+        raise exceptions.AutosubException(
+            _("Error: Destination language not provided."))
+
+    args.src_language = args.src_language.lower()
+    args.dst_language = args.dst_language.lower()
+
+    if args.src_language != 'auto' and\
+            args.src_language not in googletrans.constants.LANGUAGES:
+        if args.best_match and 'src' in args.best_match:
+            print(
+                _("Warning: Source language \"{src}\" not supported. "
+                  "Run with \"-lsc\"/\"--list-translation-codes\" "
+                  "to see all supported languages.").format(src=args.src_language))
+            best_result = lang_code_utils.match_print(
+                dsr_lang=args.src_language,
+                match_list=list(googletrans.constants.LANGUAGES.keys()),
+                min_score=args.min_score)
+            if best_result:
+                print(_("Use \"{lang_code}\" instead.").format(lang_code=best_result[0]))
+                args.src_language = best_result[0]
+            else:
+                raise exceptions.AutosubException(
+                    _("Match failed. Still using \"{lang_code}\". "
+                      "Program stopped.").format(
+                          lang_code=args.src_language))
+
+        else:
+            raise exceptions.AutosubException(
+                _("Error: Source language \"{src}\" not supported. "
+                  "Run with \"-lsc\"/\"--list-translation-codes\" "
+                  "to see all supported languages. "
+                  "Or use \"-bm\"/\"--best-match\" to get a best match.").format(
+                      src=args.src_language))
+
+    if args.dst_language not in googletrans.constants.LANGUAGES:
+        if args.best_match and 'd' in args.best_match:
+            print(
+                _("Warning: Destination language \"{dst}\" not supported. "
+                  "Run with \"-lsc\"/\"--list-translation-codes\" "
+                  "to see all supported languages.").format(dst=args.dst_language))
+            best_result = lang_code_utils.match_print(
+                dsr_lang=args.dst_language,
+                match_list=list(googletrans.constants.LANGUAGES.keys()),
+                min_score=args.min_score)
+            if best_result:
+                print(_("Use \"{lang_code}\" instead.").format(lang_code=best_result[0]))
+                args.dst_language = best_result[0]
+            else:
+                raise exceptions.AutosubException(
+                    _("Match failed. Still using \"{lang_code}\". "
+                      "Program stopped.").format(
+                          lang_code=args.dst_language))
+
+        else:
+            raise exceptions.AutosubException(
+                _("Error: Destination language \"{dst}\" not supported. "
+                  "Run with \"-lsc\"/\"--list-translation-codes\" "
+                  "to see all supported languages. "
+                  "Or use \"-bm\"/\"--best-match\" to get a best match.").format(
+                      dst=args.dst_language))
+
+    if args.dst_language == args.src_language:
+        raise exceptions.AutosubException(
+            _("Error: Translation source language is the same as the destination language."))
 
     if args.styles == ' ':
         # when args.styles is used but without option
@@ -798,14 +794,35 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
             text_list.append(event.text)
 
     # text translation
-    # use googletrans
-    translated_text = core.list_to_googletrans(
+    if args.translation_api == "man":
+        trans_doc_name = "{base}.{nt}.{extension}".format(
+            base=args.output,
+            nt='trans',
+            extension=args.translation_format)
+        if not args.src_language or args.src_language == "auto":
+            args.src_language = "src"
+        if not args.dst_language:
+            args.dst_language = "dst"
+        translator = core.ManualTranslator(
+            trans_doc_name=trans_doc_name,
+            input_m=input_m
+        )
+        if args.sleep_seconds == constants.DEFAULT_SLEEP_SECONDS:
+            args.sleep_seconds = 0.1
+        if args.max_trans_size == constants.DEFAULT_SIZE_PER_TRANS:
+            args.max_trans_size = 9950
+    else:
+        translator = googletrans.Translator(
+            user_agent=args.user_agent,
+            service_urls=args.service_urls)
+
+    translated_text, args.src_language = core.list_to_googletrans(
         text_list,
+        translator=translator,
         src_language=args.src_language,
         dst_language=args.dst_language,
+        size_per_trans=args.max_trans_size,
         sleep_seconds=args.sleep_seconds,
-        user_agent=args.user_agent,
-        service_urls=args.service_urls,
         drop_override_codes=args.drop_override_codes,
         delete_chars=args.gt_delete_chars)
 
@@ -834,7 +851,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=bilingual_sub,
                 dst_ssafile=bilingual_sub,
                 text_list=translated_text,
-                style_name=styles_list[0])
+                style_name="")
 
         bilingual_string = core.ssafile_to_sub_str(
             ssafile=bilingual_sub,
@@ -886,7 +903,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=src_sub,
                 dst_ssafile=bilingual_sub,
                 text_list=translated_text,
-                style_name=styles_list[0],
+                style_name="",
                 same_event_type=1)
 
         bilingual_string = core.ssafile_to_sub_str(
@@ -939,7 +956,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=src_sub,
                 dst_ssafile=bilingual_sub,
                 text_list=translated_text,
-                style_name=styles_list[0],
+                style_name="",
                 same_event_type=2)
 
         bilingual_string = core.ssafile_to_sub_str(
@@ -987,7 +1004,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=src_sub,
                 dst_ssafile=dst_sub,
                 text_list=translated_text,
-                style_name=styles_list[0])
+                style_name="")
 
         dst_string = core.ssafile_to_sub_str(
             ssafile=dst_sub,
@@ -1037,6 +1054,48 @@ def get_fps(
     return fps
 
 
+def convert_wav(
+        input_,
+        conversion_cmd,
+        output_=None,
+        keep=False
+):
+    """
+    Convert an input audio to output.
+    """
+    if not output_ or not keep:
+        audio_wav_temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        audio_wav = audio_wav_temp.name
+        audio_wav_temp.close()
+    else:
+        audio_wav = "{output_}.used{suffix}".format(
+            output_=output_,
+            suffix=".wav")
+    command = conversion_cmd.format(
+        in_=input_,
+        channel=1,
+        sample_rate=48000,
+        out_=audio_wav)
+    print(_("\nConvert source file to \"{name}\" "
+            "to detect audio regions.").format(
+                name=audio_wav))
+    print(command)
+    prcs = subprocess.Popen(constants.cmd_conversion(command),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    out, err = prcs.communicate()
+    if out:
+        print(out.decode(sys.stdout.encoding))
+    if err:
+        print(err.decode(sys.stdout.encoding))
+
+    if not ffmpeg_utils.ffprobe_check_file(audio_wav):
+        raise exceptions.AutosubException(
+            _("Error: Convert source file to \"{name}\" failed.").format(
+                name=audio_wav))
+    return audio_wav
+
+
 def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statements, too-many-locals, too-many-arguments
         args,
         input_m=input,
@@ -1045,25 +1104,19 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
     """
     Give args and process an input audio or video file.
     """
+    audio_wav = convert_wav(
+        input_=args.input,
+        conversion_cmd=args.audio_conversion_cmd,
+        output_=args.output,
+        keep=args.keep
+    )
+
     if args.ext_regions:
         # use external speech regions
         print(_("Use external speech regions."))
-        audio_wav_temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        audio_wav = audio_wav_temp.name
-        audio_wav_temp.close()
-        command = args.audio_conversion_cmd.format(
-            in_=args.input,
-            channel=1,
-            sample_rate=16000,
-            out_=audio_wav)
-        print(command)
-        subprocess.check_output(
-            constants.cmd_conversion(command),
-            stdin=open(os.devnull))
         regions = sub_utils.sub_to_speech_regions(
             audio_wav=audio_wav,
             sub_file=args.ext_regions)
-        os.remove(audio_wav)
 
     else:
         # use auditok_gen_speech_regions
@@ -1073,29 +1126,7 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
         if args.drop_trailing_silence:
             mode = mode | auditok.StreamTokenizer.DROP_TRAILING_SILENCE
 
-        audio_wav_temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        audio_wav = audio_wav_temp.name
-        audio_wav_temp.close()
-        command = args.audio_conversion_cmd.format(
-            in_=args.input,
-            channel=1,
-            sample_rate=48000,
-            out_=audio_wav)
-        print(_("\nConvert source file to \"{name}\" "
-                "to detect audio regions.").format(
-                    name=audio_wav))
-        print(command)
-        subprocess.check_output(
-            constants.cmd_conversion(command),
-            stdin=open(os.devnull))
-
-        if not ffmpeg_utils.ffprobe_check_file(audio_wav):
-            raise exceptions.AutosubException(
-                _("Error: Convert source file to \"{name}\" failed.").format(
-                    name=audio_wav))
-
-        print(_("Conversion complete.\nUse Auditok to detect speech regions."))
-
+        print(_("Conversion completed.\nUse Auditok to detect speech regions."))
         regions = core.auditok_gen_speech_regions(
             audio_wav=audio_wav,
             energy_threshold=args.energy_threshold,
@@ -1103,10 +1134,12 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
             max_region_size=args.max_region_size,
             max_continuous_silence=args.max_continuous_silence,
             mode=mode)
-        os.remove(audio_wav)
         gc.collect(0)
+        print(_("Auditok detection completed."))
 
-        print(_("\n\"{name}\" has been deleted.").format(name=audio_wav))
+    if not args.keep:
+        os.remove(audio_wav)
+        print(_("\"{name}\" has been deleted.").format(name=audio_wav))
 
     if not regions:
         raise exceptions.AutosubException(
@@ -1353,13 +1386,16 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
                 pass
 
             # text translation
-            translated_text = core.list_to_googletrans(
+            translator = googletrans.Translator(
+                user_agent=args.user_agent,
+                service_urls=args.service_urls)
+
+            translated_text, args.src_language = core.list_to_googletrans(
                 text_list,
+                translator=translator,
                 src_language=args.src_language,
                 dst_language=args.dst_language,
                 sleep_seconds=args.sleep_seconds,
-                user_agent=args.user_agent,
-                service_urls=args.service_urls,
                 drop_override_codes=args.drop_override_codes,
                 delete_chars=args.gt_delete_chars)
 
@@ -1382,13 +1418,11 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
                     sub_utils.pysubs2_ssa_event_add(
                         src_ssafile=None,
                         dst_ssafile=bilingual_sub,
-                        text_list=timed_text,
-                        style_name=None)
+                        text_list=timed_text)
                     sub_utils.pysubs2_ssa_event_add(
                         src_ssafile=bilingual_sub,
                         dst_ssafile=bilingual_sub,
                         text_list=translated_text,
-                        style_name=None,
                         same_event_type=0)
                     bilingual_string = core.ssafile_to_sub_str(
                         ssafile=bilingual_sub,
@@ -1430,13 +1464,11 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
                     sub_utils.pysubs2_ssa_event_add(
                         src_ssafile=None,
                         dst_ssafile=src_sub,
-                        text_list=timed_text,
-                        style_name=None)
+                        text_list=timed_text)
                     sub_utils.pysubs2_ssa_event_add(
                         src_ssafile=src_sub,
                         dst_ssafile=bilingual_sub,
                         text_list=translated_text,
-                        style_name=None,
                         same_event_type=1)
                     bilingual_string = core.ssafile_to_sub_str(
                         ssafile=bilingual_sub,
@@ -1478,13 +1510,11 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
                     sub_utils.pysubs2_ssa_event_add(
                         src_ssafile=None,
                         dst_ssafile=src_sub,
-                        text_list=timed_text,
-                        style_name=None)
+                        text_list=timed_text)
                     sub_utils.pysubs2_ssa_event_add(
                         src_ssafile=src_sub,
                         dst_ssafile=bilingual_sub,
                         text_list=translated_text,
-                        style_name=None,
                         same_event_type=2)
                     bilingual_string = core.ssafile_to_sub_str(
                         ssafile=bilingual_sub,
