@@ -5,6 +5,7 @@ Defines constants used by autosub.
 """
 # Import built-in modules
 import os
+import re
 import sys
 import shlex
 import locale
@@ -17,6 +18,7 @@ try:
     IS_GOOGLECLOUDCLIENT = True
 except DistributionNotFound:
     IS_GOOGLECLOUDCLIENT = False
+from send2trash import send2trash
 
 try:
     import langcodes as langcodes_  # pylint: disable=unused-import
@@ -40,9 +42,13 @@ else:
     APP_PATH = os.path.dirname(__file__)
 
 if sys.platform.startswith('win'):
+    DEFAULT_ENCODING = "utf-8-sig"
     IS_UNIX = False
+    DELETE_PATH = send2trash
 else:
+    DEFAULT_ENCODING = "utf-8"
     IS_UNIX = True
+    DELETE_PATH = os.remove
 
 LOCALE_PATH = os.path.abspath(os.path.join(APP_PATH, "data/locale"))
 
@@ -70,6 +76,9 @@ if multiprocessing.cpu_count() > 3:
     DEFAULT_CONCURRENCY = multiprocessing.cpu_count() >> 1
 else:
     DEFAULT_CONCURRENCY = 2
+
+VTT_TIMESTAMP = re.compile(r'\s*((?:\d+:)?\d{2}:\d{2}.\d{3})\s*-->\s*((?:\d+:)?\d{2}:\d{2}.\d{3})')
+VTT_WORD_TIMESTAMP = re.compile(r'<(\d{1,2}):(\d{2}):(\d{2})[.,](\d{2,3})>')
 
 DEFAULT_SRC_LANGUAGE = 'en-US'
 DEFAULT_ENERGY_THRESHOLD = 50
@@ -233,6 +242,7 @@ OUTPUT_FORMAT = {
 }
 
 INPUT_FORMAT = {
+    'vtt': 'WebVTT',
     'srt': 'SubRip',
     'ass': 'Advanced SubStation Alpha',
     'ssa': 'SubStation Alpha',
@@ -293,7 +303,7 @@ def get_cmd(program_name):
     Return the path for a given executable.
     "" returned when no executable exists.
     """
-    if not sys.platform.startswith('win'):
+    if IS_UNIX:
         command = which_exe(program_name)
         if command:
             return command

@@ -38,18 +38,14 @@ class SplitIntoAudioPiece:  # pylint: disable=too-few-public-methods
             is_keep,
             cmd,
             suffix,
-            include_before=0.25,
-            include_after=0.25):
+            include_before=0.0,
+            include_after=0.0):
         self.source_path = source_path
         self.cmd = cmd
         self.suffix = suffix
         self.is_keep = is_keep
-        if is_keep:
-            self.include_before = 0.0
-            self.include_after = 0.0
-        else:
-            self.include_before = include_before
-            self.include_after = include_after
+        self.include_before = include_before
+        self.include_after = include_after
         self.output = output
 
     def __call__(self, region):
@@ -97,10 +93,10 @@ class SplitIntoAudioPiece:  # pylint: disable=too-few-public-methods
         except KeyboardInterrupt:
             return None
 
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as ffmpeg_exec_error:
             raise exceptions.AutosubException(
                 _("Error: ffmpeg can't split your file. "
-                  "Check your audio processing options."))
+                  "Check your audio processing options.")) from ffmpeg_exec_error
 
 
 def ffprobe_get_fps(  # pylint: disable=superfluous-parens
@@ -138,7 +134,7 @@ def ffprobe_get_fps(  # pylint: disable=superfluous-parens
             try:
                 fps = float(input_str)
                 if fps <= 0.0:
-                    raise ValueError
+                    raise ValueError  # pylint: disable=raise-missing-from
             except ValueError:
                 print(_("Use \".srt\" instead."))
                 fps = 0.0

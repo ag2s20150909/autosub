@@ -58,15 +58,28 @@ Click up arrow to go back to TOC.
 
 - Add method convert_wav in cmdline_utils.py.
 - Add the manual translation method.
+- Add method sub_to_file in cmdline_utils.py.
+- Add complex join-events functions.
+- Add Auditok options optimization.
+- Add send2trash instead of os.remove in some cases.
+- Add word check in method man_get_vtt_words_index.
+- Add speed limit in trim in join-events.
+- Add method split_dst_lf_src_assfile to split bilingual subtitles file's events.
+- Add current working directory support in file renaming.
 
 #### Changed(Unreleased)
 
 - Change the default value for `-et` option into 50.
+- Change the control flow in method audio_or_video_prcs by using args.output_files to control.
 
 #### Fixed(Unreleased)
 
 - Fix the issue when not input the `-D` option.
 - Fix args.audio_split_cmd replacement issue when using option `-ap`. [issue #122](https://github.com/BingLingGroup/autosub/issues/122)
+- Fix default value issue with option `--user-agent`. [issue #127](https://github.com/BingLingGroup/autosub/issues/127)
+- Fix last word in line not reading in method YTBWebVTT.from_file.
+- Fix wrong return value in method list_to_googletrans. [issue #136](https://github.com/BingLingGroup/autosub/issues/136)
+- Fix youtube vtt multiple words using one timestamp issue.
 
 ### [0.5.7-alpha] - 2020-05-06
 

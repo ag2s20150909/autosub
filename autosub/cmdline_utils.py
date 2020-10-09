@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import gc
 import json
+import copy
 
 # Import third-party modules
 import auditok
@@ -27,6 +28,7 @@ from autosub import lang_code_utils
 from autosub import sub_utils
 from autosub import api_google
 from autosub import api_baidu
+from autosub import auditok_utils
 
 CMDLINE_UTILS_TEXT = gettext.translation(domain=__name__,
                                          localedir=constants.LOCALE_PATH,
@@ -130,19 +132,19 @@ def validate_io(  # pylint: disable=too-many-branches, too-many-statements
                 _("Error: arg of \"-sty\"/\"--styles\": \"{path}\" isn't valid. "
                   "You need to give a valid path.").format(path=args.styles))
 
-        if args.styles_name:
-            if len(args.styles_name) > 2:
+        if args.style_name:
+            if len(args.style_name) > 2:
                 raise exceptions.AutosubException(
                     _("Error: Too many \"-sn\"/\"--styles-name\" arguments."))
 
             style_obj = pysubs2.SSAFile.load(args.styles)
-            ass_styles = style_obj.styles.get(args.styles_name[0])
+            ass_styles = style_obj.styles.get(args.style_name[0])
             if ass_styles:
-                styles_dict = {args.styles_name[0]: ass_styles}
-                if len(args.styles_name) == 2:
-                    ass_styles = style_obj.styles.get(args.styles_name[1])
+                styles_dict = {args.style_name[0]: ass_styles}
+                if len(args.style_name) == 2:
+                    ass_styles = style_obj.styles.get(args.style_name[1])
                     if ass_styles:
-                        styles_dict[args.styles_name[1]] = ass_styles
+                        styles_dict[args.style_name[1]] = ass_styles
                     else:
                         raise exceptions.AutosubException(
                             _("Error: \"-sn\"/\"--styles-name\" "
@@ -239,23 +241,32 @@ def validate_io(  # pylint: disable=too-many-branches, too-many-statements
     return 1
 
 
-def validate_config_args(args):  # pylint: disable=too-many-branches, too-many-return-statements, too-many-statements
+def validate_json_config(config_file):
+    """
+    Check if a json config is properly given.
+    """
+    if os.path.isfile(config_file):
+        with open(config_file, encoding='utf-8') as config_fp:
+            try:
+                config_dict = json.load(config_fp)
+            except ValueError as credential_load_error:
+                raise exceptions.AutosubException(
+                    _("Error: Can't decode config file \"{filename}\".").format(
+                        filename=config_file)) from credential_load_error
+    else:
+        raise exceptions.AutosubException(
+            _("Error: Config file \"{filename}\" doesn't exist.").format(
+                filename=config_file))
+
+    return config_dict
+
+
+def validate_speech_config(args):  # pylint: disable=too-many-branches, too-many-return-statements, too-many-statements
     """
     Check that the speech-config args passed to autosub are valid
     for audio or video processing.
     """
-    if os.path.isfile(args.speech_config):
-        with open(args.speech_config, encoding='utf-8') as config_file:
-            try:
-                config_dict = json.load(config_file)
-            except ValueError:
-                raise exceptions.AutosubException(
-                    _("Error: Can't decode speech config file \"{filename}\".").format(
-                        filename=args.speech_config))
-    else:
-        raise exceptions.AutosubException(
-            _("Error: Speech config file \"{filename}\" doesn't exist.").format(
-                filename=args.speech_config))
+    config_dict = validate_json_config(args.speech_config)
 
     if args.speech_api == "gcsv1":
         if "encoding" in config_dict and config_dict["encoding"]:
@@ -419,6 +430,12 @@ def validate_aovp_args(args):  # pylint: disable=too-many-branches, too-many-ret
         if args.dst_language is None:
             print(_("Translation destination language not provided. "
                     "Only performing speech recognition."))
+            args.output_files = args.output_files - constants.DEFAULT_SUB_MODE_SET
+            if not args.output_files:
+                print(
+                    _("Override \"-of\"/\"--output-files\" due to your args too few."
+                      "\nOutput source subtitles file only."))
+                args.output_files = {"src"}
 
         else:
             if not args.src_language:
@@ -486,6 +503,11 @@ def validate_aovp_args(args):  # pylint: disable=too-many-branches, too-many-ret
             args.src_language = None
 
     else:
+        if not args.audio_process or 's' not in args.audio_process:
+            print(
+                _("Override \"-of\"/\"--output-files\" due to your args too few."
+                  "\nOutput regions subtitles file only."))
+            args.output_files = {"regions"}
         if args.ext_regions:
             if not args.keep:
                 raise exceptions.AutosubException(
@@ -639,6 +661,65 @@ def get_timed_text(
     return timed_text
 
 
+def events_to_regions(
+        events
+):
+    """
+    From events to regions.
+    """
+    regions = []
+    for event in events:
+        regions.append((event.start, event.end))
+    return regions
+
+
+def regions_to_events(
+        regions,
+        events,
+):
+    """
+    From regions to events.
+    """
+    i = 0
+    for region in regions:
+        events[i].start = region[0]
+        events[i].end = region[1]
+        i = i + 1
+
+
+def sub_to_file(
+        name_tail,
+        args,
+        ssafile,
+        input_m=input,
+        fps=30.0):
+    """
+    Write subtitles to a file and return its path.
+    """
+    sub_string = core.ssafile_to_sub_str(
+        ssafile=ssafile,
+        fps=fps,
+        subtitles_file_format=args.format)
+
+    if args.format == 'mpl2':
+        extension = 'mpl2.txt'
+    else:
+        extension = args.format
+
+    sub_name = "{base}.{nt}.{extension}".format(
+        base=args.output,
+        nt=name_tail,
+        extension=extension)
+
+    subtitles_file_path = sub_utils.str_to_file(
+        str_=sub_string,
+        output=sub_name,
+        input_m=input_m)
+    # subtitles string to file
+
+    return subtitles_file_path
+
+
 def sub_conversion(  # pylint: disable=too-many-branches, too-many-statements, too-many-locals
         args,
         input_m=input,
@@ -646,31 +727,38 @@ def sub_conversion(  # pylint: disable=too-many-branches, too-many-statements, t
     """
     Give args and convert a subtitles file.
     """
-    src_sub = pysubs2.SSAFile.load(args.input)
+    if args.input.endswith('vtt'):
+        src_sub = sub_utils.YTBWebVTT.from_file(args.input)
+        if not src_sub.vtt_words:
+            raise exceptions.AutosubException(_("\nError: Input WebVTT file is invalid."))
+        args.output_files = {"join-events"}
+    else:
+        src_sub = pysubs2.SSAFile.load(args.input)
+        if args.styles:
+            style_sub = pysubs2.SSAFile.load(args.styles)
+            src_sub.styles = style_sub.styles
+            src_sub.info = style_sub.info
+
+    new_sub = None
+
+    mode = 0
+    if not args.not_strict_min_length:
+        mode = auditok.StreamTokenizer.STRICT_MIN_LENGTH
+    if args.drop_trailing_silence:
+        mode = mode | auditok.StreamTokenizer.DROP_TRAILING_SILENCE
+
     try:
         args.output_files.remove("dst-lf-src")
         new_sub = sub_utils.merge_bilingual_assfile(
             subtitles=src_sub
         )
-        sub_string = core.ssafile_to_sub_str(
+        subtitles_file_path = sub_to_file(
+            name_tail="combination",
+            args=args,
             ssafile=new_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
-        else:
-            extension = args.format
-
-        sub_name = "{base}.{nt}.{extension}".format(
-            base=args.output,
-            nt="combination",
-            extension=extension)
-
-        subtitles_file_path = core.str_to_file(
-            str_=sub_string,
-            output=sub_name,
-            input_m=input_m)
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("\"dst-lf-src\" subtitles file "
                 "created at \"{}\".").format(subtitles_file_path))
@@ -687,27 +775,62 @@ def sub_conversion(  # pylint: disable=too-many-branches, too-many-statements, t
             subtitles=src_sub,
             order=0
         )
-        sub_string = core.ssafile_to_sub_str(
+        subtitles_file_path = sub_to_file(
+            name_tail="combination.2",
+            args=args,
             ssafile=new_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
-        else:
-            extension = args.format
-
-        sub_name = "{base}.{nt}.{extension}".format(
-            base=args.output,
-            nt="combination.2",
-            extension=extension)
-
-        subtitles_file_path = core.str_to_file(
-            str_=sub_string,
-            output=sub_name,
-            input_m=input_m)
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("\"src-lf-dst\" subtitles file "
+                "created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    try:
+        args.output_files.remove("bilingual")
+        new_sub = sub_utils.split_dst_lf_src_assfile(
+            subtitles=src_sub,
+            style_name=args.style_name
+        )
+        subtitles_file_path = sub_to_file(
+            name_tail="split",
+            args=args,
+            ssafile=new_sub,
+            input_m=input_m,
+            fps=fps
+        )
+        # subtitles string to file
+        print(_("\"bilingual\" subtitles file "
+                "created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    try:
+        args.output_files.remove("bilingual-2")
+        new_sub = sub_utils.split_dst_lf_src_assfile(
+            subtitles=src_sub,
+            order=0,
+            style_name=args.style_name
+        )
+        subtitles_file_path = sub_to_file(
+            name_tail="split.2",
+            args=args,
+            ssafile=new_sub,
+            input_m=input_m,
+            fps=fps
+        )
+        # subtitles string to file
+        print(_("\"bilingual-2\" subtitles file "
                 "created at \"{}\".").format(subtitles_file_path))
 
         if not args.output_files:
@@ -729,34 +852,180 @@ def sub_conversion(  # pylint: disable=too-many-branches, too-many-statements, t
         else:
             stop_words_set_2 = constants.DEFAULT_ENGLISH_STOP_WORDS_SET_2
 
-        new_sub = sub_utils.merge_src_assfile(
-            subtitles=src_sub,
-            max_join_size=args.max_join_size,
-            max_delta_time=int(args.max_delta_time * 1000),
-            delimiters=args.delimiters,
-            stop_words_set_1=stop_words_set_1,
-            stop_words_set_2=stop_words_set_2,
-            avoid_split=args.dont_split
-        )
-        sub_string = core.ssafile_to_sub_str(
-            ssafile=new_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
+        if args.join_control:
+            args.join_control = set(args.join_control)
         else:
-            extension = args.format
+            args.join_control = set()
 
-        sub_name = "{base}.{nt}.{extension}".format(
-            base=args.output,
-            nt="join",
-            extension=extension)
+        if args.input.endswith('vtt'):
+            new_sub = pysubs2.SSAFile()
+            if not args.ext_regions:
+                print(_("External audio/video regions is not provided. Use manual method instead."))
+                args.join_control = args.join_control | {"man"}
+                args.join_control = args.join_control - {"trim"}
 
-        subtitles_file_path = core.str_to_file(
-            str_=sub_string,
-            output=sub_name,
-            input_m=input_m)
+            if args.styles:
+                style_sub = pysubs2.SSAFile.load(args.styles)
+                new_sub.styles = style_sub.styles
+                new_sub.info = style_sub.info
+
+            if "man" not in args.join_control:
+                args.join_control = args.join_control = args.join_control | {"auto"}
+            try:
+                args.join_control.remove("semi-auto")
+                args.join_control = args.join_control | {"auto", "man"}
+            except KeyError:
+                pass
+
+            try:
+                args.join_control.remove("auto")
+                # get ass events from external regions
+                ext_name = os.path.splitext(args.ext_regions)
+                ext_ext = ext_name[-1]
+                ext_fmt = ext_ext.strip('.')
+                if ext_fmt not in constants.INPUT_FORMAT:
+                    print(_("External regions file is a video or audio file."))
+                    if ext_fmt != ".wav":
+                        audio_wav = convert_wav(
+                            input_=args.ext_regions,
+                            conversion_cmd=args.audio_conversion_cmd,
+                            output_=args.output,
+                            keep=args.keep
+                        )
+                    else:
+                        audio_wav = args.ext_regions
+                    print(_("Conversion completed.\nUse Auditok to detect speech regions."))
+                    if args.auditok_config is not None and "astats" in args.auditok_config:
+                        astats = args.auditok_config["astats"]
+                        ass_events = core.auditok_opt_opt(config_dict=astats,
+                                                          audio_wav=audio_wav,
+                                                          concurrency=args.audio_concurrency)
+                        args.max_continuous_silence = astats["result_mxcs"]
+                        args.energy_threshold = astats["result_et"]
+                    else:
+                        ass_events = auditok_utils.auditok_gen_speech_regions(
+                            audio_wav=audio_wav,
+                            energy_threshold=args.energy_threshold,
+                            min_region_size=args.min_region_size,
+                            max_region_size=args.max_region_size,
+                            max_continuous_silence=args.max_continuous_silence,
+                            mode=mode,
+                            is_ssa_event=True)
+
+                    gc.collect(0)
+                    print(_("Auditok detection completed."))
+                    if not args.keep and audio_wav != args.ext_regions:
+                        os.remove(audio_wav)
+                        print(_("\"{name}\" has been deleted.").format(name=audio_wav))
+
+                else:
+                    args.join_control = args.join_control - {"trim"}
+                    ext_ass = pysubs2.SSAFile.load(args.ext_regions)
+                    ass_events = ext_ass.events
+
+                src_sub_backup = copy.deepcopy(src_sub)
+                new_sub.events = src_sub.auto_get_vtt_words_index(
+                    events=ass_events,
+                    stop_words_set_1=stop_words_set_1,
+                    stop_words_set_2=stop_words_set_2,
+                    text_limit=args.max_join_size,
+                    avoid_split=args.dont_split)
+
+                if not new_sub.events:
+                    print(_("External regions are not enough.\n"
+                            "Use manual method instead."))
+                    args.join_control = args.join_control | {"man"}
+                    del src_sub
+                    src_sub = src_sub_backup
+                else:
+                    del src_sub_backup
+
+            except KeyError:
+                pass
+
+            try:
+                args.join_control.remove("man")
+                new_sub.events = src_sub.man_get_vtt_words_index()
+            except KeyError:
+                pass
+
+            if r"\k" in args.join_control:
+                key_tag = r"\k"
+            elif r"\kf" in args.join_control:
+                key_tag = r"\kf"
+            elif r"\ko" in args.join_control:
+                key_tag = r"\ko"
+            else:
+                key_tag = ""
+            if not args.style_name:
+                args.style_name = ["default"]
+            src_sub.text_to_ass_events(
+                events=new_sub.events,
+                key_tag=key_tag,
+                style_name=args.style_name[0],
+                is_cap="cap" in args.join_control)
+
+        else:
+            new_sub = pysubs2.SSAFile()
+            new_sub.events = sub_utils.merge_src_assfile(
+                subtitles=src_sub,
+                max_join_size=args.max_join_size,
+                max_delta_time=int(args.max_delta_time * 1000),
+                delimiters=args.delimiters,
+                stop_words_set_1=stop_words_set_1,
+                stop_words_set_2=stop_words_set_2,
+                avoid_split=args.dont_split
+            )
+
+        try:
+            args.join_control.remove("trim")
+            if new_sub:
+                regions = events_to_regions(new_sub.events)
+            else:
+                regions = events_to_regions(src_sub.events)
+            if args.auditok_config is not None and "trim" in args.auditok_config:
+                trim_dict = args.auditok_config["trim"]
+            else:
+                trim_dict = {}
+            auditok_utils.validate_atrim_config(trim_dict, args)
+            mode = 0
+            if not trim_dict["nsml"]:
+                mode = auditok.StreamTokenizer.STRICT_MIN_LENGTH
+            if trim_dict["dts"]:
+                mode = mode | auditok.StreamTokenizer.DROP_TRAILING_SILENCE
+            audio_fragments = core.bulk_audio_conversion(
+                source_file=args.ext_regions,
+                output=args.output,
+                regions=regions,
+                split_cmd=args.audio_split_cmd,
+                suffix=".wav",
+                concurrency=args.audio_concurrency,
+                is_keep=args.keep,
+                include_before=trim_dict["include_before"],
+                include_after=trim_dict["include_after"])
+            gc.collect(0)
+            core.trim_audio_regions(
+                audio_fragments=audio_fragments,
+                events=new_sub.events,
+                max_speed=trim_dict["max_speed"],
+                delta=int(trim_dict["include_before"] * 1000),
+                is_keep=args.keep,
+                trim_size=int(trim_dict["trim_size"] * 1000),
+                energy_threshold=trim_dict["et"],
+                min_region_size=trim_dict["mnrs"],
+                max_region_size=trim_dict["mxrs"],
+                max_continuous_silence=trim_dict["mxcs"],
+                mode=mode)
+        except KeyError:
+            pass
+
+        subtitles_file_path = sub_to_file(
+            name_tail="join",
+            args=args,
+            ssafile=new_sub,
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("\"join-events\" subtitles file "
                 "created at \"{}\".").format(subtitles_file_path))
@@ -824,7 +1093,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
         size_per_trans=args.max_trans_size,
         sleep_seconds=args.sleep_seconds,
         drop_override_codes=args.drop_override_codes,
-        delete_chars=args.gt_delete_chars)
+        delete_chars=args.trans_delete_chars)
 
     if not translated_text or len(translated_text) != len(text_list):
         raise exceptions.AutosubException(
@@ -845,7 +1114,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=bilingual_sub,
                 dst_ssafile=bilingual_sub,
                 text_list=translated_text,
-                style_name=styles_list[2])
+                style_name=styles_list[1])
         else:
             sub_utils.pysubs2_ssa_event_add(
                 src_ssafile=bilingual_sub,
@@ -853,25 +1122,13 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 text_list=translated_text,
                 style_name="")
 
-        bilingual_string = core.ssafile_to_sub_str(
+        subtitles_file_path = sub_to_file(
+            name_tail=args.src_language + '&' + args.dst_language,
+            args=args,
             ssafile=bilingual_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
-        else:
-            extension = args.format
-
-        bilingual_name = "{base}.{nt}.{extension}".format(
-            base=args.output,
-            nt=args.src_language + '&' + args.dst_language,
-            extension=extension)
-
-        subtitles_file_path = core.str_to_file(
-            str_=bilingual_string,
-            output=bilingual_name,
-            input_m=input_m)
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("Bilingual subtitles file "
                 "created at \"{}\".").format(subtitles_file_path))
@@ -896,7 +1153,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=src_sub,
                 dst_ssafile=bilingual_sub,
                 text_list=translated_text,
-                style_name=styles_list[2],
+                style_name=styles_list[1],
                 same_event_type=1)
         else:
             sub_utils.pysubs2_ssa_event_add(
@@ -906,25 +1163,15 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 style_name="",
                 same_event_type=1)
 
-        bilingual_string = core.ssafile_to_sub_str(
+        subtitles_file_path = sub_to_file(
+            name_tail="{src}&{dst}.0".format(
+                src=args.src_language,
+                dst=args.dst_language),
+            args=args,
             ssafile=bilingual_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
-        else:
-            extension = args.format
-
-        bilingual_name = "{base}.{nt}.0.{extension}".format(
-            base=args.output,
-            nt=args.src_language + '&' + args.dst_language,
-            extension=extension)
-
-        subtitles_file_path = core.str_to_file(
-            str_=bilingual_string,
-            output=bilingual_name,
-            input_m=input_m)
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("\"dst-lf-src\" subtitles file "
                 "created at \"{}\".").format(subtitles_file_path))
@@ -949,7 +1196,7 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=src_sub,
                 dst_ssafile=bilingual_sub,
                 text_list=translated_text,
-                style_name=styles_list[2],
+                style_name=styles_list[1],
                 same_event_type=2)
         else:
             sub_utils.pysubs2_ssa_event_add(
@@ -959,25 +1206,15 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 style_name="",
                 same_event_type=2)
 
-        bilingual_string = core.ssafile_to_sub_str(
+        subtitles_file_path = sub_to_file(
+            name_tail="{src}&{dst}.1".format(
+                src=args.src_language,
+                dst=args.dst_language),
+            args=args,
             ssafile=bilingual_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
-        else:
-            extension = args.format
-
-        bilingual_name = "{base}.{nt}.1.{extension}".format(
-            base=args.output,
-            nt=args.src_language + '&' + args.dst_language,
-            extension=extension)
-
-        subtitles_file_path = core.str_to_file(
-            str_=bilingual_string,
-            output=bilingual_name,
-            input_m=input_m)
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("\"src-lf-dst\" subtitles file "
                 "created at \"{}\".").format(subtitles_file_path))
@@ -998,30 +1235,20 @@ def sub_trans(  # pylint: disable=too-many-branches, too-many-statements, too-ma
                 src_ssafile=src_sub,
                 dst_ssafile=dst_sub,
                 text_list=translated_text,
-                style_name=styles_list[2])
+                style_name=styles_list[1])
         else:
             sub_utils.pysubs2_ssa_event_add(
                 src_ssafile=src_sub,
                 dst_ssafile=dst_sub,
                 text_list=translated_text,
                 style_name="")
-
-        dst_string = core.ssafile_to_sub_str(
+        subtitles_file_path = sub_to_file(
+            name_tail=args.dst_language,
+            args=args,
             ssafile=dst_sub,
-            fps=fps,
-            subtitles_file_format=args.format)
-
-        if args.format == 'mpl2':
-            extension = 'mpl2.txt'
-        else:
-            extension = args.format
-        dst_name = "{base}.{nt}.{extension}".format(base=args.output,
-                                                    nt=args.dst_language,
-                                                    extension=extension)
-        subtitles_file_path = core.str_to_file(
-            str_=dst_string,
-            output=dst_name,
-            input_m=input_m)
+            input_m=input_m,
+            fps=fps
+        )
         # subtitles string to file
         print(_("Destination language subtitles "
                 "file created at \"{}\".").format(subtitles_file_path))
@@ -1127,7 +1354,7 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
             mode = mode | auditok.StreamTokenizer.DROP_TRAILING_SILENCE
 
         print(_("Conversion completed.\nUse Auditok to detect speech regions."))
-        regions = core.auditok_gen_speech_regions(
+        regions = auditok_utils.auditok_gen_speech_regions(
             audio_wav=audio_wav,
             energy_threshold=args.energy_threshold,
             min_region_size=args.min_region_size,
@@ -1144,491 +1371,18 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
     if not regions:
         raise exceptions.AutosubException(
             _("Error: Can't get speech regions."))
-    if args.speech_language or \
-            args.audio_process and 's' in args.audio_process:
-        # process output first
-        try:
-            args.output_files.remove("regions")
-            if args.styles and \
-                    (args.format == 'ass' or
-                     args.format == 'ssa' or
-                     args.format == 'ass.json'):
-                times_string = core.list_to_ass_str(
-                    text_list=regions,
-                    styles_list=styles_list,
-                    subtitles_file_format=args.format)
-            else:
-                times_string = core.list_to_sub_str(
-                    timed_text=regions,
-                    fps=fps,
-                    subtitles_file_format=args.format)
-            # times to subtitles string
-            times_name = "{base}.{nt}.{extension}".format(base=args.output,
-                                                          nt="times",
-                                                          extension=args.format)
-            subtitles_file_path = core.str_to_file(
-                str_=times_string,
-                output=times_name,
-                input_m=input_m)
-            # subtitles string to file
-
-            print(_("Times file created at \"{}\".").format(subtitles_file_path))
-
-            if not args.output_files:
-                raise exceptions.AutosubException(_("\nAll works done."))
-
-        except KeyError:
-            pass
-
-        audio_fragments = core.bulk_audio_conversion(
-            source_file=args.input,
-            output=args.output,
-            regions=regions,
-            split_cmd=args.audio_split_cmd,
-            suffix=args.api_suffix,
-            concurrency=args.audio_concurrency,
-            is_keep=args.keep)
-        gc.collect(0)
-
-        if not audio_fragments or \
-                len(audio_fragments) != len(regions):
-            if not args.keep:
-                for audio_fragment in audio_fragments:
-                    os.remove(audio_fragment)
-            raise exceptions.ConversionException(
-                _("Error: Conversion failed."))
-
-        if args.audio_process and 's' in args.audio_process:
-            raise exceptions.AutosubException(
-                _("Audio processing complete.\nAll works done."))
-
-        try:
-            args.output_files.remove("full-src")
-            result_list = []
-        except KeyError:
-            result_list = None
-
-        if args.speech_api == "gsv2":
-            # Google speech-to-text v2
-            if args.http_speech_api:
-                gsv2_api_url = "http://" + \
-                               constants.GOOGLE_SPEECH_V2_API_URL
-            else:
-                gsv2_api_url = "https://" + \
-                               constants.GOOGLE_SPEECH_V2_API_URL
-
-            if args.speech_key:
-                gsv2_api_url = gsv2_api_url.format(
-                    lang=args.speech_language,
-                    key=args.speech_key)
-            else:
-                gsv2_api_url = gsv2_api_url.format(
-                    lang=args.speech_language,
-                    key=constants.GOOGLE_SPEECH_V2_API_KEY)
-
-            if args.api_suffix == ".flac":
-                headers = \
-                    {"Content-Type": "audio/x-flac; rate={rate}".format(rate=args.api_sample_rate)}
-            else:
-                headers = \
-                    {"Content-Type": "audio/ogg; rate={rate}".format(rate=args.api_sample_rate)}
-
-            text_list = core.gsv2_to_text(
-                audio_fragments=audio_fragments,
-                api_url=gsv2_api_url,
-                headers=headers,
-                concurrency=args.speech_concurrency,
-                min_confidence=args.min_confidence,
-                is_keep=args.keep,
-                result_list=result_list)
-            gc.collect(0)
-
-        elif args.speech_api == "gcsv1":
-            # Google Cloud speech-to-text V1P1Beta1
-            if args.speech_key:
-                headers = \
-                    {"Content-Type": "application/json"}
-                gcsv1_api_url = \
-                    "https://speech.googleapis.com/" \
-                    "v1p1beta1/speech:recognize?key={api_key}".format(
-                        api_key=args.speech_key)
-                print(_("Use the API key "
-                        "given in the option \"-skey\"/\"--speech-key\"."))
-                text_list = core.gcsv1_to_text(
-                    audio_fragments=audio_fragments,
-                    sample_rate=args.api_sample_rate,
-                    api_url=gcsv1_api_url,
-                    headers=headers,
-                    config=args.speech_config,
-                    concurrency=args.speech_concurrency,
-                    src_language=args.speech_language,
-                    min_confidence=args.min_confidence,
-                    is_keep=args.keep,
-                    result_list=result_list)
-            elif not constants.IS_GOOGLECLOUDCLIENT:
-                raise exceptions.SpeechToTextException(
-                    _("Error: Current build version doesn't support "
-                      "Google Cloud service account credentials."
-                      "\nPlease use other build version "
-                      "or use option \"-skey\"/\"--speech-key\" instead."))
-            elif args.service_account and os.path.isfile(args.service_account):
-                print(_("Set the GOOGLE_APPLICATION_CREDENTIALS "
-                        "given in the option \"-sa\"/\"--service-account\"."))
-                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = args.service_account
-                text_list = core.gcsv1_to_text(
-                    audio_fragments=audio_fragments,
-                    sample_rate=args.api_sample_rate,
-                    config=args.speech_config,
-                    concurrency=args.speech_concurrency,
-                    src_language=args.speech_language,
-                    min_confidence=args.min_confidence,
-                    is_keep=args.keep,
-                    result_list=result_list)
-            else:
-                if 'GOOGLE_APPLICATION_CREDENTIALS' in os.environ:
-                    print(_("Use the GOOGLE_APPLICATION_CREDENTIALS "
-                            "in the environment variables."))
-                    text_list = core.gcsv1_to_text(
-                        audio_fragments=audio_fragments,
-                        sample_rate=args.api_sample_rate,
-                        config=args.speech_config,
-                        concurrency=args.speech_concurrency,
-                        src_language=args.speech_language,
-                        min_confidence=args.min_confidence,
-                        is_keep=args.keep,
-                        result_list=result_list)
-                else:
-                    print(_("No available GOOGLE_APPLICATION_CREDENTIALS. "
-                            "Use \"-sa\"/\"--service-account\" to set one."))
-                    text_list = None
-
-        elif args.speech_api == "xfyun":
-            # Xun Fei Yun Speech-to-Text WebSocket API
-            text_list = core.xfyun_to_text(
-                audio_fragments=audio_fragments,
-                config=args.speech_config,
-                concurrency=args.speech_concurrency,
-                is_keep=False,
-                result_list=result_list)
-        elif args.speech_api == "baidu":
-            # Baidu ASR API
-            text_list = core.baidu_to_text(
-                audio_fragments=audio_fragments,
-                config=args.speech_config,
-                concurrency=args.speech_concurrency,
-                is_keep=False,
-                result_list=result_list)
-        else:
-            text_list = None
-
-        gc.collect(0)
-
-        if result_list and result_list is not None:
-            timed_result = get_timed_text(
-                is_empty_dropped=False,
-                regions=regions,
-                text_list=result_list)
-            result_string = sub_utils.list_to_json_str(timed_result)
-            result_name = "{base}.result.json".format(base=args.output)
-            result_file_path = core.str_to_file(
-                str_=result_string,
-                output=result_name,
-                input_m=input_m)
-            print(_("Speech-to-Text recogntion result json "
-                    "file created at \"{}\".").format(result_file_path))
-
-            if not args.output_files:
-                raise exceptions.AutosubException(_("\nAll works done."))
-
-        if not text_list or len(text_list) != len(regions):
-            raise exceptions.SpeechToTextException(
-                _("Error: Speech-to-text failed.\nAll works done."))
-
-        timed_text = get_timed_text(
-            is_empty_dropped=args.drop_empty_regions,
-            regions=regions,
-            text_list=text_list)
-
-        if args.dst_language:
-            # process output first
-            try:
-                args.output_files.remove("src")
-                if args.styles and \
-                        (args.format == 'ass' or
-                         args.format == 'ssa' or
-                         args.format == 'ass.json'):
-                    src_string = core.list_to_ass_str(
-                        text_list=timed_text,
-                        styles_list=styles_list[:2],
-                        subtitles_file_format=args.format, )
-                else:
-                    src_string = core.list_to_sub_str(
-                        timed_text=timed_text,
-                        fps=fps,
-                        subtitles_file_format=args.format)
-
-                # formatting timed_text to subtitles string
-                src_name = "{base}.{nt}.{extension}".format(base=args.output,
-                                                            nt=args.speech_language,
-                                                            extension=args.format)
-                subtitles_file_path = core.str_to_file(
-                    str_=src_string,
-                    output=src_name,
-                    input_m=input_m)
-                # subtitles string to file
-                print(_("Speech language subtitles "
-                        "file created at \"{}\".").format(subtitles_file_path))
-
-                if not args.output_files:
-                    raise exceptions.AutosubException(_("\nAll works done."))
-
-            except KeyError:
-                pass
-
-            # text translation
-            translator = googletrans.Translator(
-                user_agent=args.user_agent,
-                service_urls=args.service_urls)
-
-            translated_text, args.src_language = core.list_to_googletrans(
-                text_list,
-                translator=translator,
-                src_language=args.src_language,
-                dst_language=args.dst_language,
-                sleep_seconds=args.sleep_seconds,
-                drop_override_codes=args.drop_override_codes,
-                delete_chars=args.gt_delete_chars)
-
-            if not translated_text or len(translated_text) != len(regions):
-                raise exceptions.AutosubException(
-                    _("Error: Translation failed."))
-
-            try:
-                args.output_files.remove("bilingual")
-                if args.styles and \
-                        (args.format == 'ass' or
-                         args.format == 'ssa' or
-                         args.format == 'ass.json'):
-                    bilingual_string = core.list_to_ass_str(
-                        text_list=[timed_text, translated_text],
-                        styles_list=styles_list,
-                        subtitles_file_format=args.format, )
-                else:
-                    bilingual_sub = pysubs2.SSAFile()
-                    sub_utils.pysubs2_ssa_event_add(
-                        src_ssafile=None,
-                        dst_ssafile=bilingual_sub,
-                        text_list=timed_text)
-                    sub_utils.pysubs2_ssa_event_add(
-                        src_ssafile=bilingual_sub,
-                        dst_ssafile=bilingual_sub,
-                        text_list=translated_text,
-                        same_event_type=0)
-                    bilingual_string = core.ssafile_to_sub_str(
-                        ssafile=bilingual_sub,
-                        fps=fps,
-                        subtitles_file_format=args.format)
-                # formatting timed_text to subtitles string
-                bilingual_name = "{base}.{nt}.{extension}".format(
-                    base=args.output,
-                    nt=args.src_language + '&' + args.dst_language,
-                    extension=args.format)
-                subtitles_file_path = core.str_to_file(
-                    str_=bilingual_string,
-                    output=bilingual_name,
-                    input_m=input_m)
-                # subtitles string to file
-                print(_("Bilingual subtitles file "
-                        "created at \"{}\".").format(subtitles_file_path))
-
-                if not args.output_files:
-                    raise exceptions.AutosubException(_("\nAll works done."))
-
-            except KeyError:
-                pass
-
-            try:
-                args.output_files.remove("dst-lf-src")
-                if args.styles and \
-                        (args.format == 'ass' or
-                         args.format == 'ssa' or
-                         args.format == 'ass.json'):
-                    bilingual_string = core.list_to_ass_str(
-                        text_list=[timed_text, translated_text],
-                        styles_list=styles_list,
-                        subtitles_file_format=args.format,
-                        same_event_type=1)
-                else:
-                    bilingual_sub = pysubs2.SSAFile()
-                    src_sub = pysubs2.SSAFile()
-                    sub_utils.pysubs2_ssa_event_add(
-                        src_ssafile=None,
-                        dst_ssafile=src_sub,
-                        text_list=timed_text)
-                    sub_utils.pysubs2_ssa_event_add(
-                        src_ssafile=src_sub,
-                        dst_ssafile=bilingual_sub,
-                        text_list=translated_text,
-                        same_event_type=1)
-                    bilingual_string = core.ssafile_to_sub_str(
-                        ssafile=bilingual_sub,
-                        fps=fps,
-                        subtitles_file_format=args.format)
-                # formatting timed_text to subtitles string
-                bilingual_name = "{base}.{nt}.0.{extension}".format(
-                    base=args.output,
-                    nt=args.src_language + '&' + args.dst_language,
-                    extension=args.format)
-                subtitles_file_path = core.str_to_file(
-                    str_=bilingual_string,
-                    output=bilingual_name,
-                    input_m=input_m)
-                # subtitles string to file
-                print(_("\"dst-lf-src\" subtitles file "
-                        "created at \"{}\".").format(subtitles_file_path))
-
-                if not args.output_files:
-                    raise exceptions.AutosubException(_("\nAll works done."))
-
-            except KeyError:
-                pass
-
-            try:
-                args.output_files.remove("src-lf-dst")
-                if args.styles and \
-                        (args.format == 'ass' or
-                         args.format == 'ssa' or
-                         args.format == 'ass.json'):
-                    bilingual_string = core.list_to_ass_str(
-                        text_list=[timed_text, translated_text],
-                        styles_list=styles_list,
-                        subtitles_file_format=args.format,
-                        same_event_type=2)
-                else:
-                    bilingual_sub = pysubs2.SSAFile()
-                    src_sub = pysubs2.SSAFile()
-                    sub_utils.pysubs2_ssa_event_add(
-                        src_ssafile=None,
-                        dst_ssafile=src_sub,
-                        text_list=timed_text)
-                    sub_utils.pysubs2_ssa_event_add(
-                        src_ssafile=src_sub,
-                        dst_ssafile=bilingual_sub,
-                        text_list=translated_text,
-                        same_event_type=2)
-                    bilingual_string = core.ssafile_to_sub_str(
-                        ssafile=bilingual_sub,
-                        fps=fps,
-                        subtitles_file_format=args.format)
-                # formatting timed_text to subtitles string
-                bilingual_name = "{base}.{nt}.1.{extension}".format(
-                    base=args.output,
-                    nt=args.src_language + '&' + args.dst_language,
-                    extension=args.format)
-                subtitles_file_path = core.str_to_file(
-                    str_=bilingual_string,
-                    output=bilingual_name,
-                    input_m=input_m)
-                # subtitles string to file
-                print(_("\"src-lf-dst\" subtitles file "
-                        "created at \"{}\".").format(subtitles_file_path))
-
-                if not args.output_files:
-                    raise exceptions.AutosubException(_("\nAll works done."))
-
-            except KeyError:
-                pass
-
-            try:
-                args.output_files.remove("dst")
-                timed_trans = get_timed_text(
-                    is_empty_dropped=False,
-                    regions=regions,
-                    text_list=translated_text
-                )
-                # formatting timed_text to subtitles string
-                if args.styles and \
-                        (args.format == 'ass' or
-                         args.format == 'ssa' or
-                         args.format == 'ass.json'):
-                    if len(args.styles) == 4:
-                        dst_string = core.list_to_ass_str(
-                            text_list=timed_trans,
-                            styles_list=styles_list[2:4],
-                            subtitles_file_format=args.format, )
-                    else:
-                        dst_string = core.list_to_ass_str(
-                            text_list=timed_trans,
-                            styles_list=styles_list,
-                            subtitles_file_format=args.format, )
-                else:
-                    dst_string = core.list_to_sub_str(
-                        timed_text=timed_trans,
-                        fps=fps,
-                        subtitles_file_format=args.format)
-                dst_name = "{base}.{nt}.{extension}".format(
-                    base=args.output,
-                    nt=args.dst_language,
-                    extension=args.format)
-                subtitles_file_path = core.str_to_file(
-                    str_=dst_string,
-                    output=dst_name,
-                    input_m=input_m)
-                # subtitles string to file
-                print(_("Destination language subtitles "
-                        "file created at \"{}\".").format(subtitles_file_path))
-
-            except KeyError:
-                pass
-
-        else:
-            if len(args.output_files) > 1 or not ({"dst", "src"} & args.output_files):
-                print(
-                    _("Override \"-of\"/\"--output-files\" due to your args too few."
-                      "\nOutput source subtitles file only."))
-            timed_text = get_timed_text(
-                is_empty_dropped=args.drop_empty_regions,
-                regions=regions,
-                text_list=text_list)
-            if args.styles and \
-                    (args.format == 'ass' or
-                     args.format == 'ssa' or
-                     args.format == 'ass.json'):
-                src_string = core.list_to_ass_str(
-                    text_list=timed_text,
-                    styles_list=styles_list,
-                    subtitles_file_format=args.format, )
-            else:
-                src_string = core.list_to_sub_str(
-                    timed_text=timed_text,
-                    fps=fps,
-                    subtitles_file_format=args.format)
-            # formatting timed_text to subtitles string
-            src_name = "{base}.{nt}.{extension}".format(base=args.output,
-                                                        nt=args.speech_language,
-                                                        extension=args.format)
-            subtitles_file_path = core.str_to_file(
-                str_=src_string,
-                output=src_name,
-                input_m=input_m)
-            # subtitles string to file
-            print(_("Speech language subtitles "
-                    "file created at \"{}\".").format(subtitles_file_path))
-
-    else:
-        print(
-            _("Override \"-of\"/\"--output-files\" due to your args too few."
-              "\nOutput regions subtitles file only."))
+    try:
+        args.output_files.remove("regions")
         if args.styles and \
                 (args.format == 'ass' or
                  args.format == 'ssa' or
                  args.format == 'ass.json'):
-            times_subtitles = core.list_to_ass_str(
+            times_string = core.list_to_ass_str(
                 text_list=regions,
                 styles_list=styles_list,
                 subtitles_file_format=args.format)
         else:
-            times_subtitles = core.list_to_sub_str(
+            times_string = core.list_to_sub_str(
                 timed_text=regions,
                 fps=fps,
                 subtitles_file_format=args.format)
@@ -1636,10 +1390,416 @@ def audio_or_video_prcs(  # pylint: disable=too-many-branches, too-many-statemen
         times_name = "{base}.{nt}.{extension}".format(base=args.output,
                                                       nt="times",
                                                       extension=args.format)
-        subtitles_file_path = core.str_to_file(
-            str_=times_subtitles,
+        subtitles_file_path = sub_utils.str_to_file(
+            str_=times_string,
             output=times_name,
             input_m=input_m)
         # subtitles string to file
 
         print(_("Times file created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    audio_fragments = core.bulk_audio_conversion(
+        source_file=args.input,
+        output=args.output,
+        regions=regions,
+        split_cmd=args.audio_split_cmd,
+        suffix=args.api_suffix,
+        concurrency=args.audio_concurrency,
+        is_keep=args.keep)
+    gc.collect(0)
+
+    if not audio_fragments or \
+            len(audio_fragments) != len(regions):
+        if not args.keep:
+            for audio_fragment in audio_fragments:
+                os.remove(audio_fragment)
+        raise exceptions.ConversionException(
+            _("Error: Conversion failed."))
+
+    if args.audio_process and 's' in args.audio_process:
+        raise exceptions.AutosubException(
+            _("Audio processing complete.\nAll works done."))
+
+    try:
+        args.output_files.remove("full-src")
+        result_list = []
+    except KeyError:
+        result_list = None
+
+    if args.speech_api == "gsv2":
+        # Google speech-to-text v2
+        if args.http_speech_api:
+            gsv2_api_url = "http://" + \
+                           constants.GOOGLE_SPEECH_V2_API_URL
+        else:
+            gsv2_api_url = "https://" + \
+                           constants.GOOGLE_SPEECH_V2_API_URL
+
+        if args.speech_key:
+            gsv2_api_url = gsv2_api_url.format(
+                lang=args.speech_language,
+                key=args.speech_key)
+        else:
+            gsv2_api_url = gsv2_api_url.format(
+                lang=args.speech_language,
+                key=constants.GOOGLE_SPEECH_V2_API_KEY)
+
+        if args.api_suffix == ".flac":
+            headers = \
+                {"Content-Type": "audio/x-flac; rate={rate}".format(rate=args.api_sample_rate)}
+        else:
+            headers = \
+                {"Content-Type": "audio/ogg; rate={rate}".format(rate=args.api_sample_rate)}
+
+        text_list = core.gsv2_to_text(
+            audio_fragments=audio_fragments,
+            api_url=gsv2_api_url,
+            headers=headers,
+            concurrency=args.speech_concurrency,
+            min_confidence=args.min_confidence,
+            is_keep=args.keep,
+            result_list=result_list)
+        gc.collect(0)
+
+    elif args.speech_api == "gcsv1":
+        # Google Cloud speech-to-text V1P1Beta1
+        if args.speech_key:
+            headers = \
+                {"Content-Type": "application/json"}
+            gcsv1_api_url = \
+                "https://speech.googleapis.com/" \
+                "v1p1beta1/speech:recognize?key={api_key}".format(
+                    api_key=args.speech_key)
+            print(_("Use the API key "
+                    "given in the option \"-skey\"/\"--speech-key\"."))
+            text_list = core.gcsv1_to_text(
+                audio_fragments=audio_fragments,
+                sample_rate=args.api_sample_rate,
+                api_url=gcsv1_api_url,
+                headers=headers,
+                config=args.speech_config,
+                concurrency=args.speech_concurrency,
+                src_language=args.speech_language,
+                min_confidence=args.min_confidence,
+                is_keep=args.keep,
+                result_list=result_list)
+        elif not constants.IS_GOOGLECLOUDCLIENT:
+            raise exceptions.SpeechToTextException(
+                _("Error: Current build version doesn't support "
+                  "Google Cloud service account credentials."
+                  "\nPlease use other build version "
+                  "or use option \"-skey\"/\"--speech-key\" instead."))
+        elif args.service_account and os.path.isfile(args.service_account):
+            print(_("Set the GOOGLE_APPLICATION_CREDENTIALS "
+                    "given in the option \"-sa\"/\"--service-account\"."))
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = args.service_account
+            text_list = core.gcsv1_to_text(
+                audio_fragments=audio_fragments,
+                sample_rate=args.api_sample_rate,
+                config=args.speech_config,
+                concurrency=args.speech_concurrency,
+                src_language=args.speech_language,
+                min_confidence=args.min_confidence,
+                is_keep=args.keep,
+                result_list=result_list)
+        else:
+            if 'GOOGLE_APPLICATION_CREDENTIALS' in os.environ:
+                print(_("Use the GOOGLE_APPLICATION_CREDENTIALS "
+                        "in the environment variables."))
+                text_list = core.gcsv1_to_text(
+                    audio_fragments=audio_fragments,
+                    sample_rate=args.api_sample_rate,
+                    config=args.speech_config,
+                    concurrency=args.speech_concurrency,
+                    src_language=args.speech_language,
+                    min_confidence=args.min_confidence,
+                    is_keep=args.keep,
+                    result_list=result_list)
+            else:
+                print(_("No available GOOGLE_APPLICATION_CREDENTIALS. "
+                        "Use \"-sa\"/\"--service-account\" to set one."))
+                text_list = None
+
+    elif args.speech_api == "xfyun":
+        # Xun Fei Yun Speech-to-Text WebSocket API
+        text_list = core.xfyun_to_text(
+            audio_fragments=audio_fragments,
+            config=args.speech_config,
+            concurrency=args.speech_concurrency,
+            is_keep=False,
+            result_list=result_list)
+    elif args.speech_api == "baidu":
+        # Baidu ASR API
+        text_list = core.baidu_to_text(
+            audio_fragments=audio_fragments,
+            config=args.speech_config,
+            concurrency=args.speech_concurrency,
+            is_keep=False,
+            result_list=result_list)
+    else:
+        text_list = None
+
+    gc.collect(0)
+
+    if result_list and result_list is not None:
+        timed_result = get_timed_text(
+            is_empty_dropped=False,
+            regions=regions,
+            text_list=result_list)
+        result_string = sub_utils.list_to_json_str(timed_result)
+        result_name = "{base}.result.json".format(base=args.output)
+        result_file_path = sub_utils.str_to_file(
+            str_=result_string,
+            output=result_name,
+            input_m=input_m)
+        print(_("Speech-to-Text recogntion result json "
+                "file created at \"{}\".").format(result_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    if not text_list or len(text_list) != len(regions):
+        raise exceptions.SpeechToTextException(
+            _("Error: Speech-to-text failed.\nAll works done."))
+
+    timed_text = get_timed_text(
+        is_empty_dropped=args.drop_empty_regions,
+        regions=regions,
+        text_list=text_list)
+
+    try:
+        args.output_files.remove("src")
+        if args.styles and \
+                (args.format == 'ass' or
+                 args.format == 'ssa' or
+                 args.format == 'ass.json'):
+            src_string = core.list_to_ass_str(
+                text_list=timed_text,
+                styles_list=styles_list[:2],
+                subtitles_file_format=args.format, )
+        else:
+            src_string = core.list_to_sub_str(
+                timed_text=timed_text,
+                fps=fps,
+                subtitles_file_format=args.format)
+
+        # formatting timed_text to subtitles string
+        src_name = "{base}.{nt}.{extension}".format(base=args.output,
+                                                    nt=args.speech_language,
+                                                    extension=args.format)
+        subtitles_file_path = sub_utils.str_to_file(
+            str_=src_string,
+            output=src_name,
+            input_m=input_m)
+        # subtitles string to file
+        print(_("Speech language subtitles "
+                "file created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    # text translation
+    translator = googletrans.Translator(
+        user_agent=args.user_agent,
+        service_urls=args.service_urls)
+
+    translated_text, args.src_language = core.list_to_googletrans(
+        text_list,
+        translator=translator,
+        src_language=args.src_language,
+        dst_language=args.dst_language,
+        size_per_trans=args.max_trans_size,
+        sleep_seconds=args.sleep_seconds,
+        drop_override_codes=args.drop_override_codes,
+        delete_chars=args.trans_delete_chars)
+
+    if not translated_text or len(translated_text) != len(regions):
+        raise exceptions.AutosubException(
+            _("Error: Translation failed."))
+
+    try:
+        args.output_files.remove("bilingual")
+        if args.styles and \
+                (args.format == 'ass' or
+                 args.format == 'ssa' or
+                 args.format == 'ass.json'):
+            bilingual_string = core.list_to_ass_str(
+                text_list=[timed_text, translated_text],
+                styles_list=styles_list,
+                subtitles_file_format=args.format, )
+        else:
+            bilingual_sub = pysubs2.SSAFile()
+            sub_utils.pysubs2_ssa_event_add(
+                src_ssafile=None,
+                dst_ssafile=bilingual_sub,
+                text_list=timed_text)
+            sub_utils.pysubs2_ssa_event_add(
+                src_ssafile=bilingual_sub,
+                dst_ssafile=bilingual_sub,
+                text_list=translated_text,
+                same_event_type=0)
+            bilingual_string = core.ssafile_to_sub_str(
+                ssafile=bilingual_sub,
+                fps=fps,
+                subtitles_file_format=args.format)
+        # formatting timed_text to subtitles string
+        bilingual_name = "{base}.{nt}.{extension}".format(
+            base=args.output,
+            nt=args.src_language + '&' + args.dst_language,
+            extension=args.format)
+        subtitles_file_path = sub_utils.str_to_file(
+            str_=bilingual_string,
+            output=bilingual_name,
+            input_m=input_m)
+        # subtitles string to file
+        print(_("Bilingual subtitles file "
+                "created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    try:
+        args.output_files.remove("dst-lf-src")
+        if args.styles and \
+                (args.format == 'ass' or
+                 args.format == 'ssa' or
+                 args.format == 'ass.json'):
+            bilingual_string = core.list_to_ass_str(
+                text_list=[timed_text, translated_text],
+                styles_list=styles_list,
+                subtitles_file_format=args.format,
+                same_event_type=1)
+        else:
+            bilingual_sub = pysubs2.SSAFile()
+            src_sub = pysubs2.SSAFile()
+            sub_utils.pysubs2_ssa_event_add(
+                src_ssafile=None,
+                dst_ssafile=src_sub,
+                text_list=timed_text)
+            sub_utils.pysubs2_ssa_event_add(
+                src_ssafile=src_sub,
+                dst_ssafile=bilingual_sub,
+                text_list=translated_text,
+                same_event_type=1)
+            bilingual_string = core.ssafile_to_sub_str(
+                ssafile=bilingual_sub,
+                fps=fps,
+                subtitles_file_format=args.format)
+        # formatting timed_text to subtitles string
+        bilingual_name = "{base}.{nt}.0.{extension}".format(
+            base=args.output,
+            nt=args.src_language + '&' + args.dst_language,
+            extension=args.format)
+        subtitles_file_path = sub_utils.str_to_file(
+            str_=bilingual_string,
+            output=bilingual_name,
+            input_m=input_m)
+        # subtitles string to file
+        print(_("\"dst-lf-src\" subtitles file "
+                "created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    try:
+        args.output_files.remove("src-lf-dst")
+        if args.styles and \
+                (args.format == 'ass' or
+                 args.format == 'ssa' or
+                 args.format == 'ass.json'):
+            bilingual_string = core.list_to_ass_str(
+                text_list=[timed_text, translated_text],
+                styles_list=styles_list,
+                subtitles_file_format=args.format,
+                same_event_type=2)
+        else:
+            bilingual_sub = pysubs2.SSAFile()
+            src_sub = pysubs2.SSAFile()
+            sub_utils.pysubs2_ssa_event_add(
+                src_ssafile=None,
+                dst_ssafile=src_sub,
+                text_list=timed_text)
+            sub_utils.pysubs2_ssa_event_add(
+                src_ssafile=src_sub,
+                dst_ssafile=bilingual_sub,
+                text_list=translated_text,
+                same_event_type=2)
+            bilingual_string = core.ssafile_to_sub_str(
+                ssafile=bilingual_sub,
+                fps=fps,
+                subtitles_file_format=args.format)
+        # formatting timed_text to subtitles string
+        bilingual_name = "{base}.{nt}.1.{extension}".format(
+            base=args.output,
+            nt=args.src_language + '&' + args.dst_language,
+            extension=args.format)
+        subtitles_file_path = sub_utils.str_to_file(
+            str_=bilingual_string,
+            output=bilingual_name,
+            input_m=input_m)
+        # subtitles string to file
+        print(_("\"src-lf-dst\" subtitles file "
+                "created at \"{}\".").format(subtitles_file_path))
+
+        if not args.output_files:
+            raise exceptions.AutosubException(_("\nAll works done."))
+
+    except KeyError:
+        pass
+
+    try:
+        args.output_files.remove("dst")
+        timed_trans = get_timed_text(
+            is_empty_dropped=False,
+            regions=regions,
+            text_list=translated_text
+        )
+        # formatting timed_text to subtitles string
+        if args.styles and \
+                (args.format == 'ass' or
+                 args.format == 'ssa' or
+                 args.format == 'ass.json'):
+            if len(args.styles) == 4:
+                dst_string = core.list_to_ass_str(
+                    text_list=timed_trans,
+                    styles_list=styles_list[2:4],
+                    subtitles_file_format=args.format, )
+            else:
+                dst_string = core.list_to_ass_str(
+                    text_list=timed_trans,
+                    styles_list=styles_list,
+                    subtitles_file_format=args.format, )
+        else:
+            dst_string = core.list_to_sub_str(
+                timed_text=timed_trans,
+                fps=fps,
+                subtitles_file_format=args.format)
+        dst_name = "{base}.{nt}.{extension}".format(
+            base=args.output,
+            nt=args.dst_language,
+            extension=args.format)
+        subtitles_file_path = sub_utils.str_to_file(
+            str_=dst_string,
+            output=dst_name,
+            input_m=input_m)
+        # subtitles string to file
+        print(_("Destination language subtitles "
+                "file created at \"{}\".").format(subtitles_file_path))
+
+    except KeyError:
+        pass

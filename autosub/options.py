@@ -9,7 +9,7 @@ import argparse
 import gettext
 
 # Import third-party modules
-
+from googletrans import constants as gt_constants
 
 # Any changes to the path and your own modules
 from autosub import metadata
@@ -116,12 +116,12 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
                "which provides \"ass\"/\"ssa\" styles for your output. "
                "If the arg_num is 0, "
                "it will use the styles from the : "
-               "\"-esr\"/\"--external-speech-regions\". "
+               "\"-er\"/\"--external-speech-regions\". "
                "More info on \"-sn\"/\"--styles-name\". "
                "(arg_num = 0 or 1)"))
 
     input_group.add_argument(
-        '-sn', '--styles-name',
+        '-sn', '--style-name',
         nargs='*', metavar=_('style_name'),
         help=_("Valid when your output format is \"ass\"/\"ssa\" "
                "and \"-sty\"/\"--styles\" is given. "
@@ -358,6 +358,7 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
     trans_group.add_argument(
         '-surl', '--service-urls',
         metavar='URL',
+        default=["translate.google.com"],
         nargs='*',
         help=_("(Experimental)Customize py-googletrans request urls. "
                "Ref: https://py-googletrans.readthedocs.io/en/latest/ "
@@ -366,6 +367,7 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
     trans_group.add_argument(
         '-ua', '--user-agent',
         metavar='User-Agent headers',
+        default=gt_constants.DEFAULT_USER_AGENT,
         help=_("(Experimental)Customize py-googletrans User-Agent headers. "
                "Same docs above. "
                "(arg_num = 1)"))
@@ -378,7 +380,7 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
                "(arg_num = 0)"))
 
     trans_group.add_argument(
-        '-gt-dc', '--gt-delete-chars',
+        '-tdc', '--trans-delete-chars',
         nargs='?', metavar="chars",
         const="，。！",
         help=_("Replace the specific chars with a space after translation, "
@@ -424,8 +426,19 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
     conversion_group.add_argument(
         '-ds', '--dont-split',
         action='store_true',
-        help=_("(Experimental)Don't Split just merge. "
+        help=_("(Experimental)Don't split. Just merge. "
                "(arg_num = 0)"))
+
+    conversion_group.add_argument(
+        '-jctl', '--join-control',
+        metavar=_('string'),
+        nargs='*',
+        help=_("Control the way to join events when using vtt. "
+               "Key tag choice: [\"\\k\", \"\\ko\", \"\\kf\", (None)] (default: None). "
+               "Events manual adjustment: [\"man\", \"semi-auto\", \"auto\"] (default: man). "
+               "Auto capitalization and full stop: [\"cap\", (None)] (default: None). "
+               "Trim regions after processing: [\"trim\", (None)] (default: None). "
+               "(arg_num >= 1)"))
 
     network_group.add_argument(
         '-hsa', '--http-speech-api',
@@ -631,6 +644,13 @@ def get_cmd_parser():  # pylint: disable=too-many-statements
         action='store_true',
         help=_("Ref: https://auditok.readthedocs.io/en/latest/core.html#class-summary "
                "(arg_num = 0)"))
+
+    auditok_group.add_argument(
+        '-aconf', '--auditok-config',
+        nargs='?', metavar=_('path'),
+        const='aconfig.json',
+        help=_("Auditok options automatic optimization config."
+               "(arg_num = 0 or 1)"))
 
     list_group.add_argument(
         '-lf', '--list-formats',
